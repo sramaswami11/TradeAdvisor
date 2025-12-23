@@ -1,5 +1,10 @@
 import time
 import yfinance as yf
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 # =========================
 # Simple in-memory cache
@@ -24,7 +29,8 @@ def get_trade_advisor_data(ticker: str) -> dict:
             return cached["data"]
 
     # ---------- FETCH FROM YFINANCE ----------
-    print(f"Fetching fresh data for {ticker}")
+    logger.info(f"Fetching fresh data for {ticker}")
+
 
     stock = yf.Ticker(ticker)
     info = stock.info
