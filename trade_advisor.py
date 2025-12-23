@@ -1,10 +1,31 @@
+import time
 import yfinance as yf
+
+# =========================
+# Simple in-memory cache
+# =========================
+
+CACHE = {}
+CACHE_TTL_SECONDS = 300  # 5 minutes
+
 
 # =========================
 # Step 1: Data collection
 # =========================
 
 def get_trade_advisor_data(ticker: str) -> dict:
+    ticker = ticker.upper()
+    now = time.time()
+
+    # ---------- CACHE CHECK ----------
+    if ticker in CACHE:
+        cached = CACHE[ticker]
+        if now - cached["timestamp"] < CACHE_TTL_SECONDS:
+            return cached["data"]
+
+    # ---------- FETCH FROM YFINANCE ----------
+    print(f"Fetching fresh data for {ticker}")
+
     stock = yf.Ticker(ticker)
     info = stock.info
 
@@ -16,8 +37,8 @@ def get_trade_advisor_data(ticker: str) -> dict:
     except Exception:
         pass
 
-    return {
-        "ticker": ticker.upper(),
+    data = {
+        "ticker": ticker,
         "current_price": info.get("currentPrice"),
         "previous_close": info.get("previousClose"),
         "52w_high": info.get("fiftyTwoWeekHigh"),
@@ -25,6 +46,15 @@ def get_trade_advisor_data(ticker: str) -> dict:
         "market_cap": info.get("marketCap"),
         "dma_200": dma_200,
     }
+
+    # ---------- STORE IN CACHE ----------
+    CACHE[ticker] = {
+        "timestamp": now,
+        "data": data
+    }
+
+    return data
+
 
 # =========================
 # Step 2 + 3: Business logic
@@ -50,6 +80,7 @@ def get_trade_recommendation(data: dict) -> str:
     else:
         return "HOLD"
 
+
 # =========================
 # Console runner
 # =========================
@@ -70,6 +101,7 @@ def run_console():
             print(f"{k}: {v}")
         print(f"recommendation: {recommendation}")
         print("==========================\n")
+
 
 if __name__ == "__main__":
     run_console()
