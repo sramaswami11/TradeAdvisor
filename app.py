@@ -1,5 +1,9 @@
 from flask import Flask, request, render_template_string
-from trade_advisor import get_trade_advisor_data, get_trade_recommendation
+from trade_advisor import (
+    get_trade_advisor_data,
+    get_trade_recommendation,
+    explain_trade_recommendation
+)
 
 app = Flask(__name__)
 
@@ -9,40 +13,21 @@ HTML_TEMPLATE = """
 <head>
     <title>TradeAdvisor</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-        }
+        body { font-family: Arial, sans-serif; }
         table {
             border-collapse: collapse;
             margin-top: 20px;
-            width: 420px;
+            width: 480px;
         }
         th, td {
             border: 1px solid #ccc;
             padding: 8px 12px;
-            text-align: left;
         }
-        th {
-            background-color: #f4f4f4;
-        }
-        .BUY {
-            color: white;
-            background-color: #2ecc71;
-            font-weight: bold;
-            text-align: center;
-        }
-        .HOLD {
-            color: white;
-            background-color: #f39c12;
-            font-weight: bold;
-            text-align: center;
-        }
-        .SELL {
-            color: white;
-            background-color: #e74c3c;
-            font-weight: bold;
-            text-align: center;
-        }
+        th { background-color: #f4f4f4; }
+
+        .BUY  { background-color: #2ecc71; color: white; font-weight: bold; text-align: center; }
+        .HOLD { background-color: #f39c12; color: white; font-weight: bold; text-align: center; }
+        .SELL { background-color: #e74c3c; color: white; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
@@ -71,6 +56,10 @@ HTML_TEMPLATE = """
         <td><strong>Recommendation</strong></td>
         <td class="{{ recommendation }}">{{ recommendation }}</td>
     </tr>
+    <tr>
+        <td><strong>Why?</strong></td>
+        <td>{{ explanation }}</td>
+    </tr>
 </table>
 {% endif %}
 
@@ -83,24 +72,23 @@ def tradeadvisor():
     ticker = request.args.get("ticker", "").upper()
 
     if not ticker:
-        return render_template_string(HTML_TEMPLATE, data=None, recommendation=None, ticker="")
+        return render_template_string(HTML_TEMPLATE, data=None, ticker="")
 
     data = get_trade_advisor_data(ticker)
     recommendation = get_trade_recommendation(data)
+    explanation = explain_trade_recommendation(data)
 
     return render_template_string(
         HTML_TEMPLATE,
         data=data,
         recommendation=recommendation,
+        explanation=explanation,
         ticker=ticker
     )
 
 @app.route("/")
 def home():
-    return """
-    <h2>TradeAdvisor</h2>
-    <p>Go to <a href="/tradeadvisor">/tradeadvisor</a> to analyze a stock.</p>
-    """
+    return "<p>Go to <a href='/tradeadvisor'>/tradeadvisor</a></p>"
 
 if __name__ == "__main__":
     app.run(debug=True)
