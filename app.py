@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, render_template_string
 from trade_advisor import (
     get_trade_advisor_data,
@@ -91,4 +92,13 @@ def home():
     return "<p>Go to <a href='/tradeadvisor'>/tradeadvisor</a></p>"
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+
+    # Debug ON locally, OFF on Render / production
+    debug = os.environ.get("RENDER") is None
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=debug
+    )

@@ -61,41 +61,67 @@ def test_hold_when_dma_missing():
         "current_price": 90,
         "52w_low": 85,
         "52w_high": 150,
-        # dma_200, dma_50 intentionally missing
         "rsi_14": 32
     }
     assert get_trade_recommendation(data) == "HOLD"
+
 
 # -------------------------
 # RSI-aware BUY zone tests
 # -------------------------
 
-def test_buy_only_if_rsi_between_30_35():
-    # RSI 32 -> BUY
+def test_buy_only_if_rsi_between_30_and_35():
     data = {
         "current_price": 90,
         "52w_low": 85,
         "52w_high": 150,
         "dma_200": 88,
         "dma_50": 87,
-        "rsi_14": 32
     }
+
+    data["rsi_14"] = 32
     assert get_trade_recommendation(data) == "BUY"
 
-    # RSI 29 -> HOLD (too oversold)
     data["rsi_14"] = 29
     assert get_trade_recommendation(data) == "HOLD"
 
-    # RSI 36 -> HOLD (weak but not buy)
     data["rsi_14"] = 36
     assert get_trade_recommendation(data) == "HOLD"
+
+
+def test_rsi_exact_boundaries():
+    data = {
+        "current_price": 90,
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 88,
+        "dma_50": 87,
+    }
+
+    data["rsi_14"] = 30
+    assert get_trade_recommendation(data) == "BUY"
+
+    data["rsi_14"] = 35
+    assert get_trade_recommendation(data) == "BUY"
+
+
+def test_hold_if_rsi_overbought():
+    data = {
+        "current_price": 90,
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 88,
+        "dma_50": 87,
+        "rsi_14": 75
+    }
+    assert get_trade_recommendation(data) == "HOLD"
+
 
 # -------------------------
 # 50 DMA-aware tests
 # -------------------------
 
 def test_hold_if_below_50_dma():
-    # Price above 200 DMA but below 50 DMA -> HOLD
     data = {
         "current_price": 90,
         "52w_low": 85,
@@ -106,8 +132,68 @@ def test_hold_if_below_50_dma():
     }
     assert get_trade_recommendation(data) == "HOLD"
 
+
+def test_hold_if_price_equals_50_dma():
+    data = {
+        "current_price": 90,
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 85,
+        "dma_50": 90,
+        "rsi_14": 32
+    }
+    assert get_trade_recommendation(data) == "HOLD"
+
+
+# -------------------------
+# Near-low / near-high boundary tests
+# -------------------------
+
+def test_near_low_exact_10_percent_boundary():
+    data = {
+        "current_price": 93.5,  # 85 * 1.10
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 90,
+        "dma_50": 89,
+        "rsi_14": 32
+    }
+    assert get_trade_recommendation(data) == "BUY"
+
+
+def test_near_high_exact_90_percent_boundary():
+    data = {
+        "current_price": 135,  # 150 * 0.90
+        "52w_low": 80,
+        "52w_high": 150,
+        "dma_200": 160,
+        "dma_50": 155,
+        "rsi_14": 55
+    }
+    assert get_trade_recommendation(data) == "SELL"
+
+
+# -------------------------
+# Neutral / mid-range cases
+# -------------------------
+
+def test_hold_mid_range_price():
+    data = {
+        "current_price": 110,
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 100,
+        "dma_50": 105,
+        "rsi_14": 45
+    }
+    assert get_trade_recommendation(data) == "HOLD"
+
+
+# -------------------------
+# Missing / invalid data safety
+# -------------------------
+
 def test_hold_if_missing_rsi_or_dma():
-    # Missing RSI
     data = {
         "current_price": 90,
         "52w_low": 85,
@@ -117,7 +203,6 @@ def test_hold_if_missing_rsi_or_dma():
     }
     assert get_trade_recommendation(data) == "HOLD"
 
-    # Missing 50 DMA
     data = {
         "current_price": 90,
         "52w_low": 85,
