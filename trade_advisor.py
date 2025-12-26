@@ -19,13 +19,10 @@ CACHE = {}
 CACHE_TTL_SECONDS = 300  # 5 minutes
 
 # =========================
-# Indicators
+# Helpers
 # =========================
 
-def calculate_rsi(series: pd.Series, period: int = 14) -> float | None:
-    if series is None or len(series) < period + 1:
-        return None
-
+def calculate_rsi(series: pd.Series, period: int = 14):
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -35,8 +32,7 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> float | None:
 
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-
-    return round(rsi.iloc[-1], 2)
+    return rsi.iloc[-1]
 
 # =========================
 # Step 1: Data collection
@@ -51,12 +47,9 @@ def get_trade_advisor_data(ticker: str) -> dict:
     if cached:
         age = now - cached["timestamp"]
         if age < CACHE_TTL_SECONDS:
-            logger.info(f"Cache hit for {ticker} (age={int(age)}s)")
+            logger.info(f"Cache hit for {ticker} ({int(age)}s)")
             return copy.deepcopy(cached["data"])
-        else:
-            logger.info(f"Cache expired for {ticker}")
 
-    # ---------- FETCH FROM YFINANCE ----------
     logger.info(f"Fetching fresh data for {ticker}")
 
     stock = yf.Ticker(ticker)
@@ -66,19 +59,14 @@ def get_trade_advisor_data(ticker: str) -> dict:
 
     try:
         hist = stock.history(period="1y")
-        if not hist.empty:
-            close = hist["Close"]
-
-            if len(close) >= 200:
-                dma_200 = round(close.rolling(200).mean().iloc[-1], 2)
-
-            if len(close) >= 50:
-                dma_50 = round(close.rolling(50).mean().iloc[-1], 2)
-
-            rsi_14 = calculate_rsi(close)
-
+        if len(hist) >= 200:
+            dma_200 = hist["Close"].rolling(200).mean().iloc[-1]
+        if len(hist) >= 50:
+            dma_50 = hist["Close"].rolling(50).mean().iloc[-1]
+        if len(hist) >= 15:
+            rsi_14 = calculate_rsi(hist["Close"])
     except Exception as e:
-        logger.warning(f"Indicator calculation failed for {ticker}: {e}")
+        logger.warning(f"Indicator calc failed for {ticker}: {e}")
 
     data = {
         "ticker": ticker,
@@ -92,7 +80,6 @@ def get_trade_advisor_data(ticker: str) -> dict:
         "rsi_14": rsi_14,
     }
 
-    # ---------- STORE IN CACHE ----------
     CACHE[ticker] = {
         "timestamp": now,
         "data": copy.deepcopy(data)
@@ -101,10 +88,12 @@ def get_trade_advisor_data(ticker: str) -> dict:
     return data
 
 # =========================
-# Step 2 + 3: Business logic
+# Step 2 + 3: Explainable logic
 # =========================
 
-def get_trade_recommendation(data: dict) -> str:
+def get_trade_recommendation(data: dict) -> dict:
+    reasons = []
+
     price = data.get("current_price")
     low = data.get("52w_low")
     high = data.get("52w_high")
@@ -113,68 +102,71 @@ def get_trade_recommendation(data: dict) -> str:
     rsi = data.get("rsi_14")
 
     if None in (price, low, high, dma_200, dma_50, rsi):
-        return "HOLD"
+        return {
+            "action": "HOLD",
+            "reasons": ["Insufficient data to form a reliable signal"]
+        }
 
     near_low = price <= low * 1.10
     near_high = price >= high * 0.90
     above_200 = price > dma_200
     above_50 = price > dma_50
 
-    # BUY: controlled oversold rebound
-    if near_low and above_200 and above_50 and 30 <= rsi <= 35:
-        return "BUY"
-
-    # SELL: weakness near highs
-    if near_high and not above_200:
-        return "SELL"
-
-    return "HOLD"
-
-# =========================
-# Explanation (WHY)
-# =========================
-
-def explain_trade_recommendation(data: dict) -> str:
-    price = data.get("current_price")
-    low = data.get("52w_low")
-    high = data.get("52w_high")
-    dma_200 = data.get("dma_200")
-    dma_50 = data.get("dma_50")
-    rsi = data.get("rsi_14")
-
-    if None in (price, low, high, dma_200, dma_50, rsi):
-        return "Insufficient data to make a confident recommendation."
-
-    reasons = []
-
-    if price <= low * 1.10:
-        reasons.append("Price is near the 52-week low")
-
-    if price >= high * 0.90:
-        reasons.append("Price is near the 52-week high")
-
-    reasons.append(
-        "Price is above the 200-day moving average"
-        if price > dma_200
-        else "Price is below the 200-day moving average"
-    )
-
-    reasons.append(
-        "Price is above the 50-day moving average"
-        if price > dma_50
-        else "Price is below the 50-day moving average"
-    )
-
-    if rsi < 30:
-        reasons.append("RSI indicates heavy oversold conditions")
-    elif 30 <= rsi <= 35:
-        reasons.append("RSI is weak but stabilizing (potential rebound zone)")
-    elif rsi > 70:
-        reasons.append("RSI indicates overbought conditions")
+    # ----- BUY evaluation -----
+    if near_low:
+        reasons.append("Price is near 52-week low")
     else:
-        reasons.append("RSI is neutral")
+        reasons.append("BUY blocked: price not near 52-week low")
 
-    return " • ".join(reasons)
+    if above_200:
+        reasons.append("Price is above 200-day moving average")
+    else:
+        reasons.append("BUY blocked: price below 200-day moving average")
+
+    if above_50:
+        reasons.append("Price is above 50-day moving average")
+    else:
+        reasons.append("BUY blocked: price below 50-day moving average")
+
+    if 30 <= rsi <= 35:
+        reasons.append("RSI in 30–35 accumulation zone")
+    elif rsi < 30:
+        reasons.append("BUY blocked: RSI < 30 (falling knife protection)")
+    else:
+        reasons.append("BUY blocked: RSI not in buy zone")
+
+    if near_low and above_200 and above_50 and 30 <= rsi <= 35:
+        return {
+            "action": "BUY",
+            "reasons": reasons
+        }
+
+    # ----- SELL evaluation -----
+    if near_high and not above_200:
+        return {
+            "action": "SELL",
+            "reasons": [
+                "Price near 52-week high",
+                "Price below 200-day moving average (distribution risk)"
+            ]
+        }
+
+    # ----- HOLD -----
+    return {
+        "action": "HOLD",
+        "reasons": reasons
+    }
+
+# =========================
+# Step 4: Explainability wrapper
+# =========================
+
+def explain_trade_recommendation(data: dict) -> list:
+    """
+    Returns a list of human-readable reasons why the recommendation is BUY/HOLD/SELL.
+    """
+    result = get_trade_recommendation(data)
+    return result.get("reasons", [])
 
 # =========================
 # Console runner
@@ -189,14 +181,15 @@ def run_console():
             break
 
         data = get_trade_advisor_data(ticker)
-        recommendation = get_trade_recommendation(data)
-        explanation = explain_trade_recommendation(data)
+        result = get_trade_recommendation(data)
 
         print("\n=== TradeAdvisor Report ===")
         for k, v in data.items():
             print(f"{k}: {v}")
-        print(f"recommendation: {recommendation}")
-        print(f"why: {explanation}")
+        print(f"\nRecommendation: {result['action']}")
+        print("Reasons:")
+        for r in result["reasons"]:
+            print(f" - {r}")
         print("==========================\n")
 
 if __name__ == "__main__":

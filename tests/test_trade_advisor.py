@@ -2,7 +2,10 @@
 # TradeAdvisor Tests
 # =========================
 
-from trade_advisor import get_trade_recommendation
+from trade_advisor import (
+    get_trade_recommendation,
+    explain_trade_recommendation
+)
 
 # -------------------------
 # 200 DMA / basic BUY/HOLD/SELL
@@ -17,7 +20,8 @@ def test_buy_near_low_above_200_dma():
         "dma_50": 87,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "BUY"
+    result = get_trade_recommendation(data)
+    assert result["action"] == "BUY"
 
 
 def test_hold_near_low_below_200_dma():
@@ -29,7 +33,8 @@ def test_hold_near_low_below_200_dma():
         "dma_50": 90,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    result = get_trade_recommendation(data)
+    assert result["action"] == "HOLD"
 
 
 def test_sell_near_high_below_200_dma():
@@ -41,7 +46,8 @@ def test_sell_near_high_below_200_dma():
         "dma_50": 150,
         "rsi_14": 50
     }
-    assert get_trade_recommendation(data) == "SELL"
+    result = get_trade_recommendation(data)
+    assert result["action"] == "SELL"
 
 
 def test_hold_near_high_above_200_dma():
@@ -53,7 +59,8 @@ def test_hold_near_high_above_200_dma():
         "dma_50": 135,
         "rsi_14": 50
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    result = get_trade_recommendation(data)
+    assert result["action"] == "HOLD"
 
 
 def test_hold_when_dma_missing():
@@ -63,7 +70,8 @@ def test_hold_when_dma_missing():
         "52w_high": 150,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    result = get_trade_recommendation(data)
+    assert result["action"] == "HOLD"
 
 
 # -------------------------
@@ -71,7 +79,7 @@ def test_hold_when_dma_missing():
 # -------------------------
 
 def test_buy_only_if_rsi_between_30_and_35():
-    data = {
+    base_data = {
         "current_price": 90,
         "52w_low": 85,
         "52w_high": 150,
@@ -79,18 +87,18 @@ def test_buy_only_if_rsi_between_30_and_35():
         "dma_50": 87,
     }
 
-    data["rsi_14"] = 32
-    assert get_trade_recommendation(data) == "BUY"
+    data = dict(base_data, rsi_14=32)
+    assert get_trade_recommendation(data)["action"] == "BUY"
 
-    data["rsi_14"] = 29
-    assert get_trade_recommendation(data) == "HOLD"
+    data = dict(base_data, rsi_14=29)
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
-    data["rsi_14"] = 36
-    assert get_trade_recommendation(data) == "HOLD"
+    data = dict(base_data, rsi_14=36)
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
 
 def test_rsi_exact_boundaries():
-    data = {
+    base_data = {
         "current_price": 90,
         "52w_low": 85,
         "52w_high": 150,
@@ -98,11 +106,11 @@ def test_rsi_exact_boundaries():
         "dma_50": 87,
     }
 
-    data["rsi_14"] = 30
-    assert get_trade_recommendation(data) == "BUY"
+    data = dict(base_data, rsi_14=30)
+    assert get_trade_recommendation(data)["action"] == "BUY"
 
-    data["rsi_14"] = 35
-    assert get_trade_recommendation(data) == "BUY"
+    data = dict(base_data, rsi_14=35)
+    assert get_trade_recommendation(data)["action"] == "BUY"
 
 
 def test_hold_if_rsi_overbought():
@@ -114,7 +122,7 @@ def test_hold_if_rsi_overbought():
         "dma_50": 87,
         "rsi_14": 75
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
 
 # -------------------------
@@ -130,7 +138,7 @@ def test_hold_if_below_50_dma():
         "dma_50": 92,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
 
 def test_hold_if_price_equals_50_dma():
@@ -142,7 +150,7 @@ def test_hold_if_price_equals_50_dma():
         "dma_50": 90,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
 
 # -------------------------
@@ -151,26 +159,26 @@ def test_hold_if_price_equals_50_dma():
 
 def test_near_low_exact_10_percent_boundary():
     data = {
-        "current_price": 93.5,  # 85 * 1.10
+        "current_price": 93.5,
         "52w_low": 85,
         "52w_high": 150,
         "dma_200": 90,
         "dma_50": 89,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "BUY"
+    assert get_trade_recommendation(data)["action"] == "BUY"
 
 
 def test_near_high_exact_90_percent_boundary():
     data = {
-        "current_price": 135,  # 150 * 0.90
+        "current_price": 135,
         "52w_low": 80,
         "52w_high": 150,
         "dma_200": 160,
         "dma_50": 155,
         "rsi_14": 55
     }
-    assert get_trade_recommendation(data) == "SELL"
+    assert get_trade_recommendation(data)["action"] == "SELL"
 
 
 # -------------------------
@@ -186,7 +194,7 @@ def test_hold_mid_range_price():
         "dma_50": 105,
         "rsi_14": 45
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
 
 # -------------------------
@@ -201,7 +209,7 @@ def test_hold_if_missing_rsi_or_dma():
         "dma_200": 88,
         "dma_50": 87,
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
 
     data = {
         "current_price": 90,
@@ -210,4 +218,54 @@ def test_hold_if_missing_rsi_or_dma():
         "dma_200": 88,
         "rsi_14": 32
     }
-    assert get_trade_recommendation(data) == "HOLD"
+    assert get_trade_recommendation(data)["action"] == "HOLD"
+
+
+# ============================================================
+# Explainability Tests
+# ============================================================
+
+def test_explanation_for_buy():
+    data = {
+        "current_price": 90,
+        "52w_low": 85,
+        "52w_high": 150,
+        "dma_200": 88,
+        "dma_50": 87,
+        "rsi_14": 32
+    }
+
+    explanation = explain_trade_recommendation(data)
+
+    assert isinstance(explanation, list)
+    assert any("52-week low" in e.lower() for e in explanation)
+    assert any("200-day" in e.lower() for e in explanation)
+    assert any("rsi" in e.lower() for e in explanation)
+
+
+def test_explanation_for_sell():
+    data = {
+        "current_price": 145,
+        "52w_low": 80,
+        "52w_high": 150,
+        "dma_200": 155,
+        "dma_50": 150,
+        "rsi_14": 55
+    }
+
+    explanation = explain_trade_recommendation(data)
+
+    assert any("52-week high" in e.lower() for e in explanation)
+    assert any("200-day" in e.lower() for e in explanation)
+
+
+def test_explanation_for_hold_due_to_missing_data():
+    data = {
+        "current_price": 90,
+        "52w_low": 85,
+        "52w_high": 150
+    }
+
+    explanation = explain_trade_recommendation(data)
+
+    assert any("insufficient data" in e.lower() for e in explanation)
