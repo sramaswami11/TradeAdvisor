@@ -35,6 +35,49 @@ def calculate_rsi(series: pd.Series, period: int = 14):
     return rsi.iloc[-1]
 
 # =========================
+# Confidence Scoring
+# =========================
+
+def calculate_confidence(action: str, data: dict) -> int:
+    price = data.get("current_price")
+    low = data.get("52w_low")
+    high = data.get("52w_high")
+    dma_200 = data.get("dma_200")
+    dma_50 = data.get("dma_50")
+    rsi = data.get("rsi_14")
+
+    # Missing data → low confidence
+    if None in (price, low, high, dma_200, dma_50, rsi):
+        return 30
+
+    confidence = 0
+
+    if action == "BUY":
+        if price <= low * 1.10:
+            confidence += 25
+        if price > dma_200:
+            confidence += 25
+        if price > dma_50:
+            confidence += 20
+        if 30 <= rsi <= 35:
+            confidence += 30
+
+    elif action == "SELL":
+        if price >= high * 0.90:
+            confidence += 50
+        if price < dma_200:
+            confidence += 50
+
+    else:  # HOLD
+        confidence = 50
+        if price > dma_200 and rsi > 40:
+            confidence += 10
+        if rsi < 30 or rsi > 70:
+            confidence -= 10
+
+    return min(max(confidence, 0), 100)
+
+# =========================
 # Step 1: Data collection
 # =========================
 
@@ -42,7 +85,6 @@ def get_trade_advisor_data(ticker: str) -> dict:
     ticker = ticker.upper()
     now = time.time()
 
-    # ---------- CACHE CHECK ----------
     cached = CACHE.get(ticker)
     if cached:
         age = now - cached["timestamp"]
@@ -104,6 +146,7 @@ def get_trade_recommendation(data: dict) -> dict:
     if None in (price, low, high, dma_200, dma_50, rsi):
         return {
             "action": "HOLD",
+            "confidence": 30,
             "reasons": ["Insufficient data to form a reliable signal"]
         }
 
@@ -138,6 +181,7 @@ def get_trade_recommendation(data: dict) -> dict:
     if near_low and above_200 and above_50 and 30 <= rsi <= 35:
         return {
             "action": "BUY",
+            "confidence": calculate_confidence("BUY", data),
             "reasons": reasons
         }
 
@@ -145,6 +189,7 @@ def get_trade_recommendation(data: dict) -> dict:
     if near_high and not above_200:
         return {
             "action": "SELL",
+            "confidence": calculate_confidence("SELL", data),
             "reasons": [
                 "Price near 52-week high",
                 "Price below 200-day moving average (distribution risk)"
@@ -154,6 +199,7 @@ def get_trade_recommendation(data: dict) -> dict:
     # ----- HOLD -----
     return {
         "action": "HOLD",
+        "confidence": calculate_confidence("HOLD", data),
         "reasons": reasons
     }
 
@@ -162,9 +208,6 @@ def get_trade_recommendation(data: dict) -> dict:
 # =========================
 
 def explain_trade_recommendation(data: dict) -> list:
-    """
-    Returns a list of human-readable reasons why the recommendation is BUY/HOLD/SELL.
-    """
     result = get_trade_recommendation(data)
     return result.get("reasons", [])
 
@@ -186,7 +229,9 @@ def run_console():
         print("\n=== TradeAdvisor Report ===")
         for k, v in data.items():
             print(f"{k}: {v}")
+
         print(f"\nRecommendation: {result['action']}")
+        print(f"Confidence: {result['confidence']}%")
         print("Reasons:")
         for r in result["reasons"]:
             print(f" - {r}")
