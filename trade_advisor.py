@@ -1,8 +1,8 @@
-import time
-import copy
+import json
 import logging
-import yfinance as yf
-import pandas as pd
+from pathlib import Path
+
+from market_data.service import get_market_snapshot
 
 # =========================
 # Logging
@@ -12,30 +12,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # =========================
-# Simple in-memory cache
-# =========================
-
-CACHE = {}
-CACHE_TTL_SECONDS = 300  # 5 minutes
-
-# =========================
-# Helpers
-# =========================
-
-def calculate_rsi(series: pd.Series, period: int = 14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi.iloc[-1]
-
-# =========================
-# Confidence Scoring
+# Confidence Scoring (Enhanced)
 # =========================
 
 def calculate_confidence(action: str, data: dict) -> int:
@@ -46,9 +23,9 @@ def calculate_confidence(action: str, data: dict) -> int:
     dma_50 = data.get("dma_50")
     rsi = data.get("rsi_14")
 
-    # Missing data → low confidence
+    # Missing critical data → zero confidence
     if None in (price, low, high, dma_200, dma_50, rsi):
-        return 30
+        return 0
 
     confidence = 0
 
@@ -56,84 +33,73 @@ def calculate_confidence(action: str, data: dict) -> int:
         if price <= low * 1.10:
             confidence += 25
         if price > dma_200:
-            confidence += 25
-        if price > dma_50:
             confidence += 20
+        if price >= dma_50:
+            confidence += 15
         if 30 <= rsi <= 35:
-            confidence += 30
+            confidence += 25
+        # Bonus for strong trend
+        if price > dma_200 and price > dma_50:
+            confidence += 10
 
     elif action == "SELL":
         if price >= high * 0.90:
-            confidence += 50
+            confidence += 40
         if price < dma_200:
-            confidence += 50
+            confidence += 40
+        if rsi > 70:
+            confidence += 20
+        # Bonus for weak trend
+        if price < dma_200 and price < dma_50:
+            confidence += 10
 
     else:  # HOLD
         confidence = 50
-        if price > dma_200 and rsi > 40:
+        # Strong position but not extreme
+        if price > dma_200 and 40 < rsi < 60:
+            confidence += 15
+        # Consolidating near support
+        if abs(price - dma_50) / dma_50 < 0.02:  # Within 2% of 50 DMA
             confidence += 10
+        # Uncertain conditions
         if rsi < 30 or rsi > 70:
+            confidence -= 15
+        # Weak technicals
+        if price < dma_200:
             confidence -= 10
 
     return min(max(confidence, 0), 100)
 
 # =========================
-# Step 1: Data collection
+# Data Collection
 # =========================
 
 def get_trade_advisor_data(ticker: str) -> dict:
-    ticker = ticker.upper()
-    now = time.time()
+    """Fetch market data for a ticker"""
+    snapshot = get_market_snapshot(ticker)
 
-    cached = CACHE.get(ticker)
-    if cached:
-        age = now - cached["timestamp"]
-        if age < CACHE_TTL_SECONDS:
-            logger.info(f"Cache hit for {ticker} ({int(age)}s)")
-            return copy.deepcopy(cached["data"])
+    if not isinstance(snapshot, dict):
+        logger.error(f"{ticker}: market snapshot is invalid ({snapshot})")
+        return {
+            "ticker": ticker,
+            "current_price": None,
+            "52w_high": None,
+            "52w_low": None,
+            "dma_50": None,
+            "dma_200": None,
+            "rsi_14": None,
+            "volume": None,
+        }
 
-    logger.info(f"Fetching fresh data for {ticker}")
+    return snapshot
 
-    stock = yf.Ticker(ticker)
-    info = stock.info
-
-    dma_200 = dma_50 = rsi_14 = None
-
-    try:
-        hist = stock.history(period="1y")
-        if len(hist) >= 200:
-            dma_200 = hist["Close"].rolling(200).mean().iloc[-1]
-        if len(hist) >= 50:
-            dma_50 = hist["Close"].rolling(50).mean().iloc[-1]
-        if len(hist) >= 15:
-            rsi_14 = calculate_rsi(hist["Close"])
-    except Exception as e:
-        logger.warning(f"Indicator calc failed for {ticker}: {e}")
-
-    data = {
-        "ticker": ticker,
-        "current_price": info.get("currentPrice"),
-        "previous_close": info.get("previousClose"),
-        "52w_high": info.get("fiftyTwoWeekHigh"),
-        "52w_low": info.get("fiftyTwoWeekLow"),
-        "market_cap": info.get("marketCap"),
-        "dma_200": dma_200,
-        "dma_50": dma_50,
-        "rsi_14": rsi_14,
-    }
-
-    CACHE[ticker] = {
-        "timestamp": now,
-        "data": copy.deepcopy(data)
-    }
-
-    return data
 
 # =========================
-# Step 2 + 3: Explainable logic
+# Trade Recommendation Logic (IMPROVED)
 # =========================
 
 def get_trade_recommendation(data: dict) -> dict:
+    """Generate BUY/SELL/HOLD recommendation with reasoning"""
     reasons = []
 
     price = data.get("current_price")
@@ -143,99 +109,220 @@ def get_trade_recommendation(data: dict) -> dict:
     dma_50 = data.get("dma_50")
     rsi = data.get("rsi_14")
 
+    # Insufficient data guard
     if None in (price, low, high, dma_200, dma_50, rsi):
         return {
             "action": "HOLD",
-            "confidence": 30,
+            "confidence": 0,
             "reasons": ["Insufficient data to form a reliable signal"]
         }
 
     near_low = price <= low * 1.10
     near_high = price >= high * 0.90
     above_200 = price > dma_200
-    above_50 = price > dma_50
+    above_50 = price >= dma_50
+    below_200 = price < dma_200
+    below_50 = price < dma_50
 
-    # ----- BUY evaluation -----
+    # =========================
+    # STRONG BUY CONDITIONS
+    # =========================
+    buy_score = 0
+    buy_reasons = []
+
     if near_low:
-        reasons.append("Price is near 52-week low")
-    else:
-        reasons.append("BUY blocked: price not near 52-week low")
-
+        buy_reasons.append(f"✓ Price near 52-week low (${price:.2f} vs ${low:.2f})")
+        buy_score += 25
+    
     if above_200:
-        reasons.append("Price is above 200-day moving average")
-    else:
-        reasons.append("BUY blocked: price below 200-day moving average")
+        buy_reasons.append(f"✓ Above 200-day MA (${dma_200:.2f})")
+        buy_score += 25
 
     if above_50:
-        reasons.append("Price is above 50-day moving average")
-    else:
-        reasons.append("BUY blocked: price below 50-day moving average")
+        buy_reasons.append(f"✓ At/Above 50-day MA (${dma_50:.2f})")
+        buy_score += 20
 
     if 30 <= rsi <= 35:
-        reasons.append("RSI in 30–35 accumulation zone")
-    elif rsi < 30:
-        reasons.append("BUY blocked: RSI < 30 (falling knife protection)")
-    else:
-        reasons.append("BUY blocked: RSI not in buy zone")
+        buy_reasons.append(f"✓ RSI in accumulation zone ({rsi:.1f})")
+        buy_score += 30
 
-    if near_low and above_200 and above_50 and 30 <= rsi <= 35:
+    # =========================
+    # STRONG SELL CONDITIONS
+    # =========================
+    sell_score = 0
+    sell_reasons = []
+
+    if near_high:
+        sell_reasons.append(f"⚠ Price near 52-week high (${price:.2f} vs ${high:.2f})")
+        sell_score += 40
+
+    if below_200:
+        sell_reasons.append(f"⚠ Below 200-day MA (${dma_200:.2f}) - bearish")
+        sell_score += 40
+
+    if rsi > 70:
+        sell_reasons.append(f"⚠ RSI overbought ({rsi:.1f})")
+        sell_score += 20
+
+    if below_50:
+        sell_reasons.append(f"⚠ Below 50-day MA (${dma_50:.2f})")
+        sell_score += 10
+
+    # =========================
+    # DECISION LOGIC (Score-Based)
+    # =========================
+
+    # Strong BUY: All 4 conditions met
+    if buy_score >= 90:  # All major buy conditions
+        confidence = calculate_confidence("BUY", data)
         return {
             "action": "BUY",
-            "confidence": calculate_confidence("BUY", data),
-            "reasons": reasons
+            "confidence": confidence,
+            "reasons": buy_reasons
         }
 
-    # ----- SELL evaluation -----
-    if near_high and not above_200:
+    # Strong SELL: High near-term risk
+    if sell_score >= 80 and near_high and below_200:
+        confidence = calculate_confidence("SELL", data)
         return {
             "action": "SELL",
-            "confidence": calculate_confidence("SELL", data),
+            "confidence": confidence,
+            "reasons": sell_reasons
+        }
+
+    # Weak SELL: Multiple bearish signals (NEW!)
+    if sell_score >= 50 and below_200 and below_50:
+        confidence = calculate_confidence("SELL", data)
+        if confidence >= 40:  # Only recommend SELL if reasonably confident
+            return {
+                "action": "SELL",
+                "confidence": confidence,
+                "reasons": sell_reasons + [
+                    "Multiple bearish technical signals suggest weakness"
+                ]
+            }
+    
+    # FALLING KNIFE SELL: Severely oversold in downtrend (NEW!)
+    if rsi < 30 and below_200 and below_50:
+        confidence = calculate_confidence("SELL", data)
+        return {
+            "action": "SELL", 
+            "confidence": max(confidence, 60),  # At least 60% confidence
             "reasons": [
-                "Price near 52-week high",
-                "Price below 200-day moving average (distribution risk)"
+                f"🔻 Falling knife pattern detected",
+                f"Price below both 50-day MA (${dma_50:.2f}) and 200-day MA (${dma_200:.2f})",
+                f"RSI severely oversold ({rsi:.1f}) - suggesting panic selling",
+                f"Recommendation: Avoid catching falling knives - wait for stabilization"
             ]
         }
 
-    # ----- HOLD -----
+    # =========================
+    # HOLD WITH CONTEXT
+    # =========================
+
+    hold_reasons = []
+    
+    # Determine the dominant narrative
+    if buy_score > sell_score:
+        # Leaning bullish but not enough
+        hold_reasons.append(f"⚖️ Partial buy setup ({buy_score}/100) - lacks full conviction")
+        
+        # Explain what's missing for BUY
+        if not near_low:
+            hold_reasons.append(f"⚠ Not at attractive entry - price ${price:.2f} vs 52W low ${low:.2f}")
+        if not (30 <= rsi <= 35):
+            hold_reasons.append(f"⚠ RSI not in buy zone - currently {rsi:.1f} (target: 30-35)")
+        if above_200:
+            hold_reasons.append(f"✓ Long-term trend intact (above 200 DMA ${dma_200:.2f})")
+            
+    elif sell_score > buy_score:
+        # Leaning bearish but not critical
+        hold_reasons.append(f"⚖️ Caution signals present ({sell_score}/100) - monitoring for deterioration")
+        
+        # Explain the concerns
+        if near_high:
+            hold_reasons.append(f"⚠ Near resistance - price ${price:.2f} approaching 52W high ${high:.2f}")
+        if below_50:
+            hold_reasons.append(f"⚠ Short-term weakness - below 50 DMA ${dma_50:.2f}")
+        if below_200:
+            hold_reasons.append(f"⚠ Long-term downtrend - below 200 DMA ${dma_200:.2f}")
+        if rsi > 65:
+            hold_reasons.append(f"⚠ Momentum extended - RSI {rsi:.1f}")
+            
+    else:
+        # Truly neutral
+        hold_reasons.append("⚖️ Neutral technical setup - no strong signals")
+        
+        if above_200:
+            hold_reasons.append(f"✓ Above 200-day MA (${dma_200:.2f}) - long-term trend positive")
+        if 40 <= rsi <= 60:
+            hold_reasons.append(f"⚖️ RSI neutral ({rsi:.1f}) - balanced momentum")
+
+    if not hold_reasons:
+        hold_reasons.append("No strong signals in either direction - wait for clearer setup")
+
+    confidence = calculate_confidence("HOLD", data)
+    
     return {
         "action": "HOLD",
-        "confidence": calculate_confidence("HOLD", data),
-        "reasons": reasons
+        "confidence": confidence,
+        "reasons": hold_reasons
     }
 
+
 # =========================
-# Step 4: Explainability wrapper
+# Explainability wrapper
 # =========================
 
 def explain_trade_recommendation(data: dict) -> list:
+    """Return human-readable explanations for the trade decision"""
     result = get_trade_recommendation(data)
-    return result.get("reasons", [])
+    return result.get("reasons", ["Insufficient data to generate recommendation"])
+
 
 # =========================
-# Console runner
+# Batch JSON processing
 # =========================
 
-def run_console():
-    print("Welcome to TradeAdvisor (Python Edition)\n")
+def analyze_tickers_from_json(json_path: str) -> list[dict]:
+    """Batch analyze tickers from JSON file"""
+    path = Path(json_path)
 
-    while True:
-        ticker = input("Enter ticker (or 'exit'): ").strip()
-        if ticker.lower() == "exit":
-            break
+    with open(path, "r") as f:
+        payload = json.load(f)
 
-        data = get_trade_advisor_data(ticker)
-        result = get_trade_recommendation(data)
+    results = []
 
-        print("\n=== TradeAdvisor Report ===")
-        for k, v in data.items():
-            print(f"{k}: {v}")
+    for ticker in payload.get("tickers", []):
+        try:
+            data = get_trade_advisor_data(ticker)
+            result = get_trade_recommendation(data)
 
-        print(f"\nRecommendation: {result['action']}")
-        print(f"Confidence: {result['confidence']}%")
-        print("Reasons:")
-        for r in result["reasons"]:
-            print(f" - {r}")
-        print("==========================\n")
+            results.append({
+                "ticker": ticker,
+                "price": data.get("current_price"),
+                "action": result["action"],
+                "confidence": result["confidence"],
+                "rsi": data.get("rsi_14"),
+                "dma_50": data.get("dma_50"),
+                "dma_200": data.get("dma_200"),
+                "52w_low": data.get("52w_low"),
+                "52w_high": data.get("52w_high"),
+                "volume": data.get("volume"),
+            })
+        except Exception as e:
+            logger.error(f"Error analyzing {ticker}: {e}")
+            results.append({
+                "ticker": ticker,
+                "price": None,
+                "action": "ERROR",
+                "confidence": 0,
+                "rsi": None,
+                "dma_50": None,
+                "dma_200": None,
+                "52w_low": None,
+                "52w_high": None,
+                "volume": None,
+            })
 
-if __name__ == "__main__":
-    run_console()
+    return results

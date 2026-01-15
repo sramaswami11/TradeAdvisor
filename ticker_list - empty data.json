@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "name": "",
+      "email": "",
+      "tickers": ["AAPL", "MSFT", "NVDA"]
+    },
+    {
+      "name": "",
+      "email": "",
+      "tickers": ["TSLA", "AMZN"]
+    }
+  ]
+}
