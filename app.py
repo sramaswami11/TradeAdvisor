@@ -94,7 +94,6 @@ from validators import validate_email, validate_ticker
 # =========================
 
 app = Flask(__name__)
-
 app.secret_key = os.environ["FLASK_SECRET"]
 
 app.config.update(
@@ -114,6 +113,21 @@ limiter = Limiter(
 )
 
 init_db()
+
+# =========================
+# Root Route (FIX #1)
+# =========================
+
+@app.route("/")
+def index():
+    return (
+        "<h2>TradeAdvisor is running 🚀</h2>"
+        "<p>Available endpoints:</p>"
+        "<ul>"
+        "<li><a href='/batch-json'>/batch-json</a></li>"
+        "<li><a href='/magic-login'>/magic-login</a></li>"
+        "</ul>"
+    )
 
 # =========================
 # Security Headers
@@ -149,7 +163,6 @@ def confidence_color(conf):
 # Routes (unchanged below)
 # =========================
 # (Your existing routes continue exactly as before)
-# No behavioral changes beyond safer startup
 # =========================
 
 if __name__ == "__main__":
