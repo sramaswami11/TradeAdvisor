@@ -25,7 +25,6 @@ print(">>> app.py started")
 
 REQUIRED_ENV_VARS = [
     "FLASK_SECRET",
-    "EOD_API_KEY",
     "EMAIL_HOST",
     "EMAIL_PORT",
     "EMAIL_USER",
