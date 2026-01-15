@@ -26,10 +26,10 @@ print(">>> app.py started")
 REQUIRED_ENV_VARS = [
     "FLASK_SECRET",
     "EOD_API_KEY",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_USER",
-    "SMTP_PASSWORD"
+    "EMAIL_HOST",
+    "EMAIL_PORT",
+    "EMAIL_USER",
+    "EMAIL_PASSWORD"
 ]
 
 missing = [k for k in REQUIRED_ENV_VARS if not os.environ.get(k)]
