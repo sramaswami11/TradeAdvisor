@@ -6,6 +6,15 @@ import os
 import secrets
 from datetime import timedelta, datetime
 import sys
+import logging
+
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s"
+)
+
+logger = logging.getLogger(__name__)
 
 # =========================
 # Load .env (local only)
@@ -205,7 +214,9 @@ def login():
             )
         except Exception as e:
             print(f"Email error: {e}")
-            return "Error sending email. Please try again.", 500
+            logger.exception("Unexpected error sending email")
+            raise
+            #return "Error sending email. Please try again.", 500
 
         return """
         <html>
