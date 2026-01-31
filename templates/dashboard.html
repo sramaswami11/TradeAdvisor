@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Trade Advisor</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f7f9fc;
+        }
+
+        h2 {
+            margin-bottom: 10px;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background: #f0f2f5;
+        }
+
+        .buy { color: green; font-weight: bold; }
+        .sell { color: red; font-weight: bold; }
+        .hold { color: #c58a00; font-weight: bold; }
+
+        .panel {
+            margin-top: 25px;
+            padding: 15px;
+            background: white;
+            border-left: 4px solid #4a6cf7;
+        }
+
+        .add-box {
+            margin-bottom: 20px;
+        }
+
+        input[type=text] {
+            padding: 8px;
+            width: 200px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<h2>Your Tickers</h2>
+
+<form method="POST" class="add-box">
+    <input type="text" name="symbol" placeholder="Enter ticker (e.g. AAPL)" required>
+    <button type="submit">Add</button>
+</form>
+
+<table>
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>50 DMA</th>
+        <th>200 DMA</th>
+        <th>Rating</th>
+        <th>Confidence</th>
+        <th>Rationale</th>
+    </tr>
+
+    {% for t in tickers %}
+    <tr>
+        <td>{{ t.symbol }}</td>
+        <td>{{ t.price }}</td>
+        <td>{{ t.dma50 }}</td>
+        <td>{{ t.dma200 }}</td>
+        <td class="{{ t.rating|lower }}">{{ t.rating }}</td>
+        <td>{{ t.confidence }}%</td>
+        <td>
+            <a href="{{ url_for('dashboard', view=t.symbol) }}">View</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% if selected_rationale %}
+<div class="panel">
+    <h3>{{ selected_rationale.symbol }} — Rationale</h3>
+    <pre>{{ selected_rationale.rationale }}</pre>
+</div>
+{% endif %}
+
+</body>
+</html>

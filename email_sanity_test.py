@@ -32,6 +32,13 @@ EMAIL_PORT = 587
 
 TO_EMAIL = "sramaswami11@gmail.com"  # send to yourself for sanity test
 
+"""
+SMTP sanity test.
+Skipped unless EMAIL_USER / EMAIL_PASSWORD are set.
+Only relevant when email alerts are enabled.
+"""
+
+
 # =========================
 # Test
 # =========================

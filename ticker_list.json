@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "name": "Siva",
+      "email": "sramaswami2025@gmail.com",
+      "tickers": ["AAPL", "MSFT", "NVDA","BRK-B","FLIN","ORCL"]
+    },
+    {
+      "name": "Kal",
+      "email": "ksankara11@gmail.com",
+      "tickers": ["TSLA", "AMZN"]
+    }
+  ]
+}
