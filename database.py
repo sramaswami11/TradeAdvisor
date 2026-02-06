@@ -1,312 +1,143 @@
-#--- database.py ---
 import sqlite3
-from typing import List, Optional, Dict
-from datetime import datetime, timedelta
-import json
+from pathlib import Path
 
-DB_PATH = "tradeadvisor.db"
+DB_PATH = Path(__file__).parent / "trade_advisor.db"
+
+
+def get_connection():
+    return sqlite3.connect(DB_PATH)
+
 
 # =========================
-# Database Initialization
+# Schema
 # =========================
-
 def init_db():
-    """Initialize database schema"""
-    conn = sqlite3.connect(DB_PATH)
+    conn = get_connection()
     c = conn.cursor()
-    
-    # Users table
-    c.execute('''
+
+    c.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
             email TEXT UNIQUE NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            name TEXT
         )
-    ''')
-    
-    # User tickers table
-    c.execute('''
+    """)
+
+    c.execute("""
         CREATE TABLE IF NOT EXISTS user_tickers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            ticker TEXT NOT NULL,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            UNIQUE(user_id, ticker)
+            symbol TEXT NOT NULL,
+            UNIQUE(user_id, symbol),
+            FOREIGN KEY(user_id) REFERENCES users(id)
         )
-    ''')
-    
-    # Magic links table (secure token storage)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS magic_links (
-            token TEXT PRIMARY KEY,
-            email TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            expires_at TIMESTAMP NOT NULL,
-            used BOOLEAN DEFAULT 0
-        )
-    ''')
-    
-    # Recommendations history
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS recommendations (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            ticker TEXT NOT NULL,
-            action TEXT NOT NULL,
-            confidence INTEGER NOT NULL,
-            price REAL NOT NULL,
-            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-    ''')
-    
-    # Create indexes for performance
-    c.execute('CREATE INDEX IF NOT EXISTS idx_magic_links_email ON magic_links(email)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_recommendations_user ON recommendations(user_id)')
-    c.execute('CREATE INDEX IF NOT EXISTS idx_recommendations_ticker ON recommendations(ticker)')
-    
+    """)
+
     conn.commit()
     conn.close()
 
-# =========================
-# User Management
-# =========================
 
-def get_user_by_email(email: str) -> Optional[Dict]:
-    """Get user and their tickers"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def ensure_name_column():
+    conn = get_connection()
     c = conn.cursor()
-    
-    c.execute('SELECT * FROM users WHERE email = ? COLLATE NOCASE', (email,))
-    user = c.fetchone()
-    
-    if not user:
-        conn.close()
-        return None
-    
-    c.execute('SELECT ticker FROM user_tickers WHERE user_id = ?', (user['id'],))
-    tickers = [row['ticker'] for row in c.fetchall()]
-    
-    conn.close()
-    
-    return {
-        'id': user['id'],
-        'name': user['name'],
-        'email': user['email'],
-        'tickers': tickers
-    }
-
-
-def create_user(name: str, email: str, tickers: List[str] = None) -> Optional[int]:
-    """Create a new user"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    try:
-        c.execute('INSERT INTO users (name, email) VALUES (?, ?)', (name, email))
-        user_id = c.lastrowid
-        
-        if tickers:
-            for ticker in tickers:
-                c.execute('INSERT INTO user_tickers (user_id, ticker) VALUES (?, ?)', 
-                         (user_id, ticker.upper()))
-        
-        conn.commit()
-        return user_id
-    except sqlite3.IntegrityError:
-        return None
-    finally:
-        conn.close()
-
-
-def add_ticker_to_user(user_id: int, ticker: str) -> bool:
-    """Add a ticker to user's watchlist"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    try:
-        c.execute('INSERT INTO user_tickers (user_id, ticker) VALUES (?, ?)', 
-                 (user_id, ticker.upper()))
-        conn.commit()
-        return True
-    except sqlite3.IntegrityError:
-        return False
-    finally:
-        conn.close()
-
-
-def remove_ticker_from_user(user_id: int, ticker: str) -> bool:
-    """Remove a ticker from user's watchlist"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute('DELETE FROM user_tickers WHERE user_id = ? AND ticker = ?', 
-             (user_id, ticker.upper()))
-    conn.commit()
-    success = c.rowcount > 0
-    conn.close()
-    
-    return success
-
-# =========================
-# Magic Link Management
-# =========================
-
-def save_magic_link(token: str, email: str, expires_minutes: int = 15) -> bool:
-    """Save magic link with expiration"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    expires_at = datetime.now() + timedelta(minutes=expires_minutes)
-    
-    try:
-        c.execute('''
-            INSERT INTO magic_links (token, email, expires_at)
-            VALUES (?, ?, ?)
-        ''', (token, email, expires_at))
-        conn.commit()
-        return True
-    except Exception as e:
-        print(f"Error saving magic link: {e}")
-        return False
-    finally:
-        conn.close()
-
-
-def verify_magic_link(token: str) -> Optional[str]:
-    """Verify and consume magic link"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    
-    # Find the link
-    c.execute('''
-        SELECT * FROM magic_links 
-        WHERE token = ? AND used = 0
-    ''', (token,))
-    
-    link = c.fetchone()
-    
-    if not link:
-        conn.close()
-        return None
-    
-    # Check expiration
-    expires_at = datetime.fromisoformat(link['expires_at'])
-    if datetime.now() > expires_at:
-        conn.close()
-        return None
-    
-    # Mark as used
-    c.execute('UPDATE magic_links SET used = 1 WHERE token = ?', (token,))
-    conn.commit()
-    
-    email = link['email']
-    conn.close()
-    
-    return email
-
-
-def cleanup_expired_links():
-    """Remove expired magic links (run periodically)"""
-    conn = sqlite3.connect(DB_PATH)
-    c = conn.cursor()
-    
-    c.execute('DELETE FROM magic_links WHERE expires_at < ?', (datetime.now(),))
-    deleted = c.rowcount
-    
+    c.execute("PRAGMA table_info(users)")
+    cols = [row[1] for row in c.fetchall()]
+    if "name" not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN name TEXT")
     conn.commit()
     conn.close()
-    
-    return deleted
+
 
 # =========================
-# Recommendations History
+# Users
 # =========================
-
-def save_recommendation(user_id: int, ticker: str, action: str, 
-                       confidence: int, price: float):
-    """Save a recommendation to history"""
-    conn = sqlite3.connect(DB_PATH)
+def create_user(email: str, name: str | None = None):
+    conn = get_connection()
     c = conn.cursor()
-    
-    try:
-        c.execute('''
-            INSERT INTO recommendations 
-            (user_id, ticker, action, confidence, price)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (user_id, ticker, action, confidence, price))
-        conn.commit()
-    except Exception as e:
-        print(f"Error saving recommendation: {e}")
-    finally:
-        conn.close()
-
-
-def get_user_recommendation_history(user_id: int, days: int = 30) -> List[Dict]:
-    """Get user's recommendation history"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    c = conn.cursor()
-    
-    cutoff_date = datetime.now() - timedelta(days=days)
-    
-    c.execute('''
-        SELECT * FROM recommendations
-        WHERE user_id = ? AND timestamp >= ?
-        ORDER BY timestamp DESC
-    ''', (user_id, cutoff_date))
-    
-    results = [dict(row) for row in c.fetchall()]
+    c.execute(
+        "INSERT OR IGNORE INTO users (email, name) VALUES (?, ?)",
+        (email, name)
+    )
+    conn.commit()
     conn.close()
-    
-    return results
 
 
-def get_ticker_recommendation_history(ticker: str, days: int = 30) -> List[Dict]:
-    """Get all recommendations for a specific ticker"""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def get_user_by_email(email: str):
+    conn = get_connection()
     c = conn.cursor()
-    
-    cutoff_date = datetime.now() - timedelta(days=days)
-    
-    c.execute('''
-        SELECT * FROM recommendations
-        WHERE ticker = ? AND timestamp >= ?
-        ORDER BY timestamp DESC
-    ''', (ticker.upper(), cutoff_date))
-    
-    results = [dict(row) for row in c.fetchall()]
+    c.execute(
+        "SELECT id, email, name FROM users WHERE email = ?",
+        (email,)
+    )
+    row = c.fetchone()
     conn.close()
-    
-    return results
+
+    if row:
+        return {"id": row[0], "email": row[1], "name": row[2]}
+    return None
+
+
+def get_user_by_id(user_id: int):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, email, name FROM users WHERE id = ?",
+        (user_id,)
+    )
+    row = c.fetchone()
+    conn.close()
+
+    if row:
+        return {"id": row[0], "email": row[1], "name": row[2]}
+    return None
+
 
 # =========================
-# Migration Helper
+# Tickers
 # =========================
+def get_tickers_for_user(user_id: int):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT symbol FROM user_tickers WHERE user_id = ? ORDER BY symbol",
+        (user_id,)
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
-def migrate_from_json(json_path: str = "ticker_list.json"):
-    """Migrate users from JSON file to database"""
-    try:
-        with open(json_path, 'r') as f:
-            data = json.load(f)
-        
-        migrated = 0
-        for user in data.get('users', []):
-            if user.get('name') and user.get('email'):
-                user_id = create_user(
-                    user['name'], 
-                    user['email'], 
-                    user.get('tickers', [])
-                )
-                if user_id:
-                    migrated += 1
-                    print(f"Migrated user: {user['email']}")
-        
-        return migrated
-    except Exception as e:
-        print(f"Migration error: {e}")
-        return 0
+
+def add_ticker_to_user(user_id: int, symbol: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "INSERT OR IGNORE INTO user_tickers (user_id, symbol) VALUES (?, ?)",
+        (user_id, symbol)
+    )
+    conn.commit()
+    conn.close()
+
+
+def remove_ticker_from_user(user_id: int, symbol: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "DELETE FROM user_tickers WHERE user_id = ? AND symbol = ?",
+        (user_id, symbol)
+    )
+    conn.commit()
+    conn.close()
+
+def update_user_name_if_missing(user_id: int, name: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        """
+        UPDATE users
+        SET name = ?
+        WHERE id = ? AND (name IS NULL OR name = '')
+        """,
+        (name, user_id)
+    )
+    conn.commit()
+    conn.close()

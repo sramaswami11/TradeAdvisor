@@ -2,177 +2,173 @@ import os
 import re
 from flask import Flask, render_template, request, redirect, url_for, session
 
-# If provider.py is in the same folder as app.py:
-from market_data.provider import fetch_snapshot  # uses EODHD and computes DMA/RSI/etc  :contentReference[oaicite:2]{index=2}
+from market_data.provider import fetch_snapshot
+from database import (
+    init_db,
+    create_user,
+    get_user_by_email,
+    get_user_by_id,
+    get_tickers_for_user,
+    add_ticker_to_user,
+    remove_ticker_from_user
+)
 
 app = Flask(__name__)
 
+# =========================
 # Flask Security
-# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-#Stored it in env.
+# =========================
 app.secret_key = os.getenv("FLASK_SECRET_KEY")
 if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY environment variable not set")
 
-IS_DEV = True
 DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]
 
 
+# =========================
+# Helpers
+# =========================
 def normalize_symbol(symbol: str) -> str:
-    """Basic cleanup: letters/numbers/dot/dash only; uppercase."""
-    s = (symbol or "").strip().upper()
-    s = re.sub(r"[^A-Z0-9\.\-]", "", s)
-    return s
-
-
-def fmt_or_dash(x):
-    return "—" if x is None else x
+    return re.sub(r"[^A-Z0-9\.\-]", "", (symbol or "").upper())
 
 
 def decide_rating(snapshot: dict):
-    """
-    Simple explainable rules using price vs DMA50/DMA200 and RSI.
-    snapshot keys come from provider.fetch_snapshot(). :contentReference[oaicite:3]{index=3}
-    """
     price = snapshot.get("current_price")
     dma50 = snapshot.get("dma_50")
     dma200 = snapshot.get("dma_200")
     rsi = snapshot.get("rsi_14")
 
     if price is None:
-        return "Hold", 50, "No price data available from provider."
+        return "Hold", 0, "No price data available."
 
-    reasons = []
     score = 0
+    reasons = []
 
     if dma50 is not None:
-        if price >= dma50:
-            score += 1
-            reasons.append("Price is above the 50 DMA (short-term strength).")
-        else:
-            score -= 1
-            reasons.append("Price is below the 50 DMA (short-term weakness).")
-    else:
-        reasons.append("50 DMA unavailable (need more history).")
+        score += 1 if price >= dma50 else -1
+        reasons.append("Price is above the 50 DMA." if price >= dma50 else "Price is below the 50 DMA.")
 
     if dma200 is not None:
-        if price >= dma200:
-            score += 1
-            reasons.append("Price is above the 200 DMA (long-term trend supportive).")
-        else:
-            score -= 1
-            reasons.append("Price is below the 200 DMA (long-term trend weak).")
-    else:
-        reasons.append("200 DMA unavailable (need more history).")
+        score += 2 if price >= dma200 else -2
+        reasons.append("Price is above the 200 DMA." if price >= dma200 else "Price is below the 200 DMA.")
 
     if rsi is not None:
-        if rsi >= 70:
-            score -= 1
-            reasons.append(f"RSI is high ({rsi}) → potentially overbought.")
-        elif rsi <= 30:
+        if rsi <= 30:
             score += 1
-            reasons.append(f"RSI is low ({rsi}) → potentially oversold rebound.")
+            reasons.append(f"RSI is low ({rsi}).")
+        elif rsi >= 70:
+            score -= 1
+            reasons.append(f"RSI is high ({rsi}).")
         else:
             reasons.append(f"RSI is neutral ({rsi}).")
+
+    if score >= 3:
+        return "Buy", 85, " ".join(reasons)
+    elif score >= 1:
+        return "Hold", 65, " ".join(reasons)
     else:
-        reasons.append("RSI unavailable.")
-
-    # Rating & confidence
-    if score >= 2:
-        rating = "Buy"
-        confidence = 80
-    elif score == 1:
-        rating = "Hold"
-        confidence = 65
-    else:
-        rating = "Sell"
-        confidence = 55
-
-    rationale = " ".join(reasons)
-    return rating, confidence, rationale
+        return "Sell", 55, " ".join(reasons)
 
 
-def build_row(symbol: str) -> dict:
-    snap = fetch_snapshot(symbol)  # cached via lru_cache in provider :contentReference[oaicite:4]{index=4}
-
+def build_row(symbol: str):
+    snap = fetch_snapshot(symbol)
     rating, confidence, rationale = decide_rating(snap)
-
     return {
         "symbol": symbol,
-        "price": fmt_or_dash(snap.get("current_price")),
-        "dma50": fmt_or_dash(snap.get("dma_50")),
-        "dma200": fmt_or_dash(snap.get("dma_200")),
+        "price": snap.get("current_price", "—"),
+        "dma50": snap.get("dma_50", "—"),
+        "dma200": snap.get("dma_200", "—"),
         "rating": rating,
         "confidence": confidence,
         "rationale": rationale,
     }
 
 
-def ensure_defaults_loaded():
-    session.setdefault("tickers", [])
-    existing = {t.get("symbol", "").upper() for t in session["tickers"]}
-
+def ensure_default_tickers_for_user(user_id: int):
+    if get_tickers_for_user(user_id):
+        return
     for sym in DEFAULT_TICKERS:
-        if sym not in existing:
-            session["tickers"].append(build_row(sym))
-            session.modified = True
+        add_ticker_to_user(user_id, sym)
 
 
-def add_symbol(symbol: str):
-    session.setdefault("tickers", [])
-    symbol = normalize_symbol(symbol)
-    if not symbol:
-        return
-
-    existing = {t.get("symbol", "").upper() for t in session["tickers"]}
-    if symbol.upper() in existing:
-        return
-
-    session["tickers"].append(build_row(symbol))
-    session.modified = True
-
-
+# =========================
+# Routes
+# =========================
 @app.route("/")
 def index():
-    if IS_DEV:
-        session["user_email"] = "dev@example.com"
+    return redirect(url_for("dashboard")) if "user_id" in session else redirect(url_for("login"))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        name = request.form.get("name", "").strip()
+        email = request.form.get("email", "").strip().lower()
+
+        if not name or not email:
+            return "Name and email required", 400
+
+        create_user(email=email, name=name)
+        user = get_user_by_email(email)
+
+# 🔥 FIX: backfill name if missing
+        from database import update_user_name_if_missing
+        update_user_name_if_missing(user["id"], name)
+
+        # refresh user after update
+        user = get_user_by_email(email)
+
+
+        session["user_id"] = user["id"]
+        ensure_default_tickers_for_user(user["id"])
+
         return redirect(url_for("dashboard"))
-    return redirect(url_for("login"))
+
+    return render_template("login.html")
 
 
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    if "user_email" not in session:
+    if "user_id" not in session:
         return redirect(url_for("login"))
 
-    # keep your old behavior: show default tickers on first load
-    ensure_defaults_loaded()
+    user = get_user_by_id(session["user_id"])
 
-    # Add ticker
     if request.method == "POST":
-        add_symbol(request.form.get("symbol", ""))
+        symbol = normalize_symbol(request.form.get("symbol"))
+        if symbol:
+            add_ticker_to_user(user["id"], symbol)
         return redirect(url_for("dashboard"))
 
-    # View rationale (panel below table)
+    symbols = get_tickers_for_user(user["id"])
+    tickers = [build_row(sym) for sym in symbols]
+
     selected_rationale = None
-    view_symbol = normalize_symbol(request.args.get("view", ""))
-    if view_symbol:
-        for t in session.get("tickers", []):
-            if t.get("symbol", "").upper() == view_symbol.upper():
-                selected_rationale = t
-                break
+    view = normalize_symbol(request.args.get("view"))
+    if view:
+        selected_rationale = next((t for t in tickers if t["symbol"] == view), None)
 
     return render_template(
         "dashboard.html",
-        tickers=session.get("tickers", []),
-        selected_rationale=selected_rationale
+        tickers=tickers,
+        selected_rationale=selected_rationale,
+        user=user
     )
 
 
-@app.route("/login")
-def login():
-    return "Login disabled in dev mode"
+@app.route("/remove/<symbol>")
+def remove_ticker(symbol):
+    remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    session.modified = True
+    return redirect(url_for("login"))
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    init_db()
+    app.run()

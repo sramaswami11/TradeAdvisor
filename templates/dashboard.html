@@ -1,101 +1,206 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>Trade Advisor</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            margin: 40px;
+            margin: 0;
             background: #f7f9fc;
+            color: #222;
         }
 
-        h2 {
-            margin-bottom: 10px;
-        }
-
-        table {
-            border-collapse: collapse;
-            width: 100%;
+        /* ===== Header ===== */
+        .header {
             background: white;
+            padding: 20px 40px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h2 {
+            margin: 0;
+            font-size: 22px;
+        }
+
+        .logout {
+            text-decoration: none;
+            font-size: 14px;
+            color: #555;
+        }
+
+        .logout:hover {
+            text-decoration: underline;
+        }
+
+        /* ===== Page container ===== */
+        .container {
+            padding: 30px 40px;
+        }
+
+        /* ===== Add ticker box ===== */
+        .add-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            width: fit-content;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            margin-bottom: 25px;
+        }
+
+        .add-box input {
+            padding: 8px 10px;
+            font-size: 14px;
+            width: 180px;
+            border-radius: 6px;
+            border: 1px solid #ccc;
+        }
+
+        .add-box button {
+            padding: 8px 14px;
+            background: #4a6cf7;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .add-box button:hover {
+            background: #3b5be3;
+        }
+
+        /* ===== Table ===== */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.05);
         }
 
         th, td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
+            padding: 12px;
             text-align: center;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
         }
 
         th {
             background: #f0f2f5;
+            font-weight: 600;
         }
 
-        .buy { color: green; font-weight: bold; }
-        .sell { color: red; font-weight: bold; }
-        .hold { color: #c58a00; font-weight: bold; }
+        tr:hover {
+            background: #fafbff;
+        }
 
+        .buy { color: #1a7f37; font-weight: bold; }
+        .sell { color: #d1242f; font-weight: bold; }
+        .hold { color: #9a6700; font-weight: bold; }
+
+        .action-link {
+            color: #4a6cf7;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .action-link:hover {
+            text-decoration: underline;
+        }
+
+        .remove {
+            color: #d1242f;
+            font-size: 16px;
+            text-decoration: none;
+        }
+
+        .remove:hover {
+            opacity: 0.7;
+        }
+
+        /* ===== Rationale panel ===== */
         .panel {
-            margin-top: 25px;
-            padding: 15px;
+            margin-top: 30px;
+            padding: 20px;
             background: white;
-            border-left: 4px solid #4a6cf7;
+            border-radius: 10px;
+            border-left: 5px solid #4a6cf7;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
         }
 
-        .add-box {
-            margin-bottom: 20px;
+        .panel h3 {
+            margin-top: 0;
         }
 
-        input[type=text] {
-            padding: 8px;
-            width: 200px;
-        }
-
-        button {
-            padding: 8px 12px;
-            cursor: pointer;
+        pre {
+            white-space: pre-wrap;
+            margin: 0;
+            font-family: inherit;
+            font-size: 14px;
         }
     </style>
 </head>
 <body>
 
-<h2>Your Tickers</h2>
-
-<form method="POST" class="add-box">
-    <input type="text" name="symbol" placeholder="Enter ticker (e.g. AAPL)" required>
-    <button type="submit">Add</button>
-</form>
-
-<table>
-    <tr>
-        <th>Symbol</th>
-        <th>Price</th>
-        <th>50 DMA</th>
-        <th>200 DMA</th>
-        <th>Rating</th>
-        <th>Confidence</th>
-        <th>Rationale</th>
-    </tr>
-
-    {% for t in tickers %}
-    <tr>
-        <td>{{ t.symbol }}</td>
-        <td>{{ t.price }}</td>
-        <td>{{ t.dma50 }}</td>
-        <td>{{ t.dma200 }}</td>
-        <td class="{{ t.rating|lower }}">{{ t.rating }}</td>
-        <td>{{ t.confidence }}%</td>
-        <td>
-            <a href="{{ url_for('dashboard', view=t.symbol) }}">View</a>
-        </td>
-    </tr>
-    {% endfor %}
-</table>
-
-{% if selected_rationale %}
-<div class="panel">
-    <h3>{{ selected_rationale.symbol }} — Rationale</h3>
-    <pre>{{ selected_rationale.rationale }}</pre>
+<!-- ===== Header ===== -->
+<div class="header">
+    <h2>Tickers for {{ user_name }}</h2>
+    <a href="{{ url_for('logout') }}" class="logout">Logout</a>
 </div>
-{% endif %}
+
+<!-- ===== Main ===== -->
+<div class="container">
+
+    <form method="POST" class="add-box">
+        <input type="text" name="symbol" placeholder="Add ticker (e.g. AAPL)" required>
+        <button type="submit">Add</button>
+    </form>
+
+    <table>
+        <tr>
+            <th>Symbol</th>
+            <th>Price</th>
+            <th>50 DMA</th>
+            <th>200 DMA</th>
+            <th>Rating</th>
+            <th>Confidence</th>
+            <th>Rationale</th>
+            <th></th>
+        </tr>
+
+        {% for t in tickers %}
+        <tr>
+            <td>{{ t.symbol }}</td>
+            <td>{{ t.price }}</td>
+            <td>{{ t.dma50 }}</td>
+            <td>{{ t.dma200 }}</td>
+            <td class="{{ t.rating|lower }}">{{ t.rating }}</td>
+            <td>{{ t.confidence }}%</td>
+            <td>
+                <a class="action-link" href="{{ url_for('dashboard', view=t.symbol) }}">View</a>
+            </td>
+            <td>
+                <a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    {% if selected_rationale %}
+    <div class="panel">
+        <h3>{{ selected_rationale.symbol }} — Rationale</h3>
+        <pre>{{ selected_rationale.rationale }}</pre>
+    </div>
+    {% endif %}
+
+</div>
 
 </body>
 </html>

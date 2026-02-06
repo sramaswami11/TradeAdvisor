@@ -12,7 +12,6 @@ EOD_API_KEY = os.getenv("EODHD_API_KEY")
 if not EOD_API_KEY:
     raise RuntimeError("EODHD_API_KEY environment variable not set")
 
-print(f"[DEBUG] EOD_API_KEY={EOD_API_KEY}")
 
 
 BASE_URL = "https://eodhd.com/api/eod"
