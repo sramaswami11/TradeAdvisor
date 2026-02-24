@@ -1,14 +1,15 @@
 {
+  "version": 1,
   "users": [
+    {
+      "name": "Admin",
+      "email": "tradeadvisor2025@gmail.com",
+      "tickers": ["SPY", "QQQ", "NVDA", "AAPL"]
+    },
     {
       "name": "Siva",
       "email": "sramaswami2025@gmail.com",
-      "tickers": ["AAPL", "MSFT", "NVDA","BRK-B","FLIN","ORCL"]
-    },
-    {
-      "name": "Kal",
-      "email": "ksankara11@gmail.com",
-      "tickers": ["TSLA", "AMZN"]
+      "tickers": ["MSFT", "GOOGL", "AMZN"]
     }
   ]
 }

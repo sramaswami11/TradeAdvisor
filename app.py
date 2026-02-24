@@ -1,6 +1,10 @@
 import os
 import re
-from flask import Flask, render_template, request, redirect, url_for, session
+import json
+from dotenv import load_dotenv
+from flask import Flask, render_template, request, redirect, url_for, session, abort
+
+load_dotenv()
 
 from market_data.provider import fetch_snapshot
 from database import (
@@ -10,7 +14,8 @@ from database import (
     get_user_by_id,
     get_tickers_for_user,
     add_ticker_to_user,
-    remove_ticker_from_user
+    remove_ticker_from_user,
+    update_user_name_if_missing
 )
 
 app = Flask(__name__)
@@ -23,13 +28,70 @@ if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY environment variable not set")
 
 DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]
-
+#ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").lower()
 
 # =========================
 # Helpers
 # =========================
+
 def normalize_symbol(symbol: str) -> str:
     return re.sub(r"[^A-Z0-9\.\-]", "", (symbol or "").upper())
+
+
+def is_admin(user: dict) -> bool:
+    if not user or not user.get("email"):
+        return False
+
+    admin_email = os.getenv("ADMIN_EMAIL", "").lower()
+    return user["email"].lower() == admin_email
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def validate_user_import_json(payload: dict):
+    errors = []
+    preview = []
+
+    if not isinstance(payload, dict):
+        return ["Top-level JSON must be an object"], None
+
+    users = payload.get("users")
+    if not isinstance(users, list):
+        return ["'users' must be a list"], None
+
+    for idx, u in enumerate(users):
+        if not isinstance(u, dict):
+            errors.append(f"users[{idx}] must be an object")
+            continue
+
+        name = u.get("name")
+        email = u.get("email")
+        tickers = u.get("tickers")
+
+        if not name or not isinstance(name, str):
+            errors.append(f"users[{idx}].name is required")
+
+        if not email or not isinstance(email, str) or not EMAIL_RE.match(email):
+            errors.append(f"users[{idx}].email is invalid")
+
+        if not isinstance(tickers, list) or not tickers:
+            errors.append(f"users[{idx}].tickers must be a non-empty list")
+
+        normalized = []
+        for t in tickers or []:
+            if not isinstance(t, str):
+                errors.append(f"users[{idx}].tickers must be strings")
+                continue
+            normalized.append(normalize_symbol(t))
+
+        preview.append({
+            "name": name,
+            "email": email.lower(),
+            "tickers": normalized
+        })
+
+    return errors, preview
 
 
 def decide_rating(snapshot: dict):
@@ -94,6 +156,7 @@ def ensure_default_tickers_for_user(user_id: int):
 # =========================
 # Routes
 # =========================
+
 @app.route("/")
 def index():
     return redirect(url_for("dashboard")) if "user_id" in session else redirect(url_for("login"))
@@ -111,13 +174,8 @@ def login():
         create_user(email=email, name=name)
         user = get_user_by_email(email)
 
-# 🔥 FIX: backfill name if missing
-        from database import update_user_name_if_missing
         update_user_name_if_missing(user["id"], name)
-
-        # refresh user after update
         user = get_user_by_email(email)
-
 
         session["user_id"] = user["id"]
         ensure_default_tickers_for_user(user["id"])
@@ -133,6 +191,8 @@ def dashboard():
         return redirect(url_for("login"))
 
     user = get_user_by_id(session["user_id"])
+
+    print("USER OBJECT:", user)
 
     if request.method == "POST":
         symbol = normalize_symbol(request.form.get("symbol"))
@@ -162,10 +222,71 @@ def remove_ticker(symbol):
     return redirect(url_for("dashboard"))
 
 
+# =========================
+# ADMIN UPLOAD — FULL IMPLEMENTATION
+# =========================
+
+@app.route("/admin/upload-users", methods=["GET", "POST"])
+def admin_upload_users():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    user = get_user_by_id(session["user_id"])
+
+    if not is_admin(user):
+        abort(403)
+
+    if request.method == "POST":
+        file = request.files.get("file")
+        if not file:
+            return "No file uploaded", 400
+
+        try:
+            payload = json.load(file)
+        except Exception as e:
+            return f"Invalid JSON: {e}", 400
+
+        errors, preview = validate_user_import_json(payload)
+
+        if errors:
+            return {
+                "status": "error",
+                "errors": errors
+            }, 400
+
+        inserted_users = 0
+        inserted_tickers = 0
+
+        for u in preview:
+            create_user(email=u["email"], name=u["name"])
+            db_user = get_user_by_email(u["email"])
+
+            update_user_name_if_missing(db_user["id"], u["name"])
+
+            for sym in u["tickers"]:
+                add_ticker_to_user(db_user["id"], sym)
+                inserted_tickers += 1
+
+            inserted_users += 1
+
+        return {
+            "status": "success",
+            "users_processed": inserted_users,
+            "tickers_added": inserted_tickers
+        }
+
+    return """
+    <h2>Admin: Upload Users (JSON)</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".json" required>
+        <button type="submit">Upload & Import</button>
+    </form>
+    """
+
+
 @app.route("/logout")
 def logout():
     session.clear()
-    session.modified = True
     return redirect(url_for("login"))
 
 
