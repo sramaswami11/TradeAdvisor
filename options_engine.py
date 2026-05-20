@@ -21,67 +21,67 @@ class OptionsEngine:
 
     def find_csp_opportunities(self, symbol, max_dte=45):
 
-    print(f"=== CSP SCAN START: {symbol} ===")
+        print(f"=== CSP SCAN START: {symbol} ===")
 
-    ticker = yf.Ticker(symbol)
+        ticker = yf.Ticker(symbol)
 
     # ---- Get current price ----
-    hist = ticker.history(period="1d")
+        hist = ticker.history(period="1d")
 
-    print("HIST EMPTY:", hist.empty)
+        print("HIST EMPTY:", hist.empty)
 
-    if hist.empty:
+        if hist.empty:
+            return []
+
+        price = float(hist["Close"].iloc[-1])
+
+        print("PRICE:", price)
+
+        # ---- Get technical signals ----
+        data = self._build_indicator_data(ticker, price)
+
+        print("INDICATOR DATA:", data)
+
+        if not data:
+            return []
+
+        strategy = StrategyEngine(data).evaluate()
+        signals = strategy.get("signals", {})
+
+        print("SIGNALS:", signals)
+
+        if not signals.get("above_200_dma"):
+            print("FAILED: below 200 DMA")
         return []
 
-    price = float(hist["Close"].iloc[-1])
+        opportunities = []
 
-    print("PRICE:", price)
+        print("OPTIONS EXPIRIES:", ticker.options)
 
-    # ---- Get technical signals ----
-    data = self._build_indicator_data(ticker, price)
+        for expiry in ticker.options:
 
-    print("INDICATOR DATA:", data)
+            dte = self._days_to_expiry(expiry)
 
-    if not data:
-        return []
+            print("EXPIRY:", expiry, "DTE:", dte)
 
-    strategy = StrategyEngine(data).evaluate()
-    signals = strategy.get("signals", {})
-
-    print("SIGNALS:", signals)
-
-    if not signals.get("above_200_dma"):
-        print("FAILED: below 200 DMA")
-        return []
-
-    opportunities = []
-
-    print("OPTIONS EXPIRIES:", ticker.options)
-
-    for expiry in ticker.options:
-
-        dte = self._days_to_expiry(expiry)
-
-        print("EXPIRY:", expiry, "DTE:", dte)
-
-        if dte <= 7 or dte > max_dte:
-            print("SKIPPED DTE")
+            if dte <= 7 or dte > max_dte:
+                print("SKIPPED DTE")
             continue
 
-        chain = ticker.option_chain(expiry)
-        puts = chain.puts
+            chain = ticker.option_chain(expiry)
+            puts = chain.puts
 
-        print("PUT COUNT:", len(puts))
+            print("PUT COUNT:", len(puts))
 
-        if puts.empty:
-            continue
+            if puts.empty:
+                continue
 
-        for _, row in puts.iterrows():
+            for _, row in puts.iterrows():
 
-            strike = float(row["strike"])
-            premium = float(row["bid"] or 0)
+                strike = float(row["strike"])
+                premium = float(row["bid"] or 0)
 
-            distance_pct = (strike - price) / price
+                distance_pct = (strike - price) / price
 
             print(
                 f"STRIKE={strike} "
@@ -120,10 +120,10 @@ class OptionsEngine:
                 "recommendation": self._label(score)
             })
 
-    print("FINAL CSP COUNT:", len(opportunities))
+        print("FINAL CSP COUNT:", len(opportunities))
 
-    return sorted(
-        opportunities,
+        return sorted(
+            opportunities,
         key=lambda x: x["score"],
         reverse=True
     )
