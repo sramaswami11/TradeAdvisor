@@ -19,132 +19,114 @@ class OptionsEngine:
     def __init__(self):
         pass
 
-    def find_csp_opportunities(self, symbol, max_dte=60):
+    def find_csp_opportunities(self, symbol, max_dte=45):
 
-        ticker = yf.Ticker(symbol)
+    print(f"=== CSP SCAN START: {symbol} ===")
 
-        # ---- Current price ----
-        hist = ticker.history(period="5d")
+    ticker = yf.Ticker(symbol)
 
-        if hist.empty:
-            print(f"{symbol}: No price history")
-            return []
+    # ---- Get current price ----
+    hist = ticker.history(period="1d")
 
-        price = float(hist["Close"].iloc[-1])
+    print("HIST EMPTY:", hist.empty)
 
-        # ---- Technical signals ----
-        data = self._build_indicator_data(ticker, price)
+    if hist.empty:
+        return []
 
-        if not data:
-            print(f"{symbol}: Insufficient indicator data")
-            return []
+    price = float(hist["Close"].iloc[-1])
 
-        strategy = StrategyEngine(data).evaluate()
-        signals = strategy.get("signals", {})
+    print("PRICE:", price)
 
-        print(f"{symbol}: SIGNALS -> {signals}")
+    # ---- Get technical signals ----
+    data = self._build_indicator_data(ticker, price)
 
-        # Relaxed requirement:
-        # allow above_200 OR above_50
-        if not (signals.get("above_200_dma") or signals.get("above_50_dma")):
-            print(f"{symbol}: Failed trend filter")
-            return []
+    print("INDICATOR DATA:", data)
 
-        opportunities = []
+    if not data:
+        return []
 
-        # ---- Expirations ----
-        for expiry in ticker.options:
+    strategy = StrategyEngine(data).evaluate()
+    signals = strategy.get("signals", {})
 
-            dte = self._days_to_expiry(expiry)
+    print("SIGNALS:", signals)
 
-            # Broaden acceptable DTE
-            if dte < 7 or dte > max_dte:
+    if not signals.get("above_200_dma"):
+        print("FAILED: below 200 DMA")
+        return []
+
+    opportunities = []
+
+    print("OPTIONS EXPIRIES:", ticker.options)
+
+    for expiry in ticker.options:
+
+        dte = self._days_to_expiry(expiry)
+
+        print("EXPIRY:", expiry, "DTE:", dte)
+
+        if dte <= 7 or dte > max_dte:
+            print("SKIPPED DTE")
+            continue
+
+        chain = ticker.option_chain(expiry)
+        puts = chain.puts
+
+        print("PUT COUNT:", len(puts))
+
+        if puts.empty:
+            continue
+
+        for _, row in puts.iterrows():
+
+            strike = float(row["strike"])
+            premium = float(row["bid"] or 0)
+
+            distance_pct = (strike - price) / price
+
+            print(
+                f"STRIKE={strike} "
+                f"PREMIUM={premium} "
+                f"DIST={distance_pct:.2%}"
+            )
+
+            if premium <= 0:
                 continue
 
-            try:
-                chain = ticker.option_chain(expiry)
-                puts = chain.puts
-            except Exception as e:
-                print(f"{symbol}: Option chain error for {expiry}: {e}")
+            if distance_pct > -0.05 or distance_pct < -0.15:
                 continue
 
-            if puts.empty:
-                continue
+            yield_pct = premium / strike
+            annualized = yield_pct * (365 / dte)
 
-            for _, row in puts.iterrows():
+            score = self._score_csp(
+                signals,
+                yield_pct,
+                annualized,
+                distance_pct
+            )
 
-                strike = float(row.get("strike", 0))
-                bid = row.get("bid", 0)
-                ask = row.get("ask", 0)
+            opportunities.append({
+                "symbol": symbol,
+                "strategy": "CSP",
+                "price": round(price, 2),
+                "strike": strike,
+                "expiry": expiry,
+                "dte": dte,
+                "premium": round(premium, 2),
+                "yield_pct": round(yield_pct * 100, 2),
+                "annualized": round(annualized * 100, 2),
+                "distance_pct": round(distance_pct * 100, 2),
+                "score": score,
+                "recommendation": self._label(score)
+            })
 
-                premium = float(bid or 0)
+    print("FINAL CSP COUNT:", len(opportunities))
 
-                # fallback to midpoint if bid missing
-                if premium <= 0 and ask:
-                    premium = float(ask) * 0.5
-
-                if premium <= 0:
-                    continue
-
-                # ---- Distance ----
-                distance_pct = (strike - price) / price
-
-                # Broaden strike selection:
-                # Accept 3–25% below spot
-                if distance_pct > -0.03 or distance_pct < -0.25:
-                    continue
-
-                # ---- Liquidity ----
-                volume = row.get("volume", 0) or 0
-                oi = row.get("openInterest", 0) or 0
-
-                if volume < 1 and oi < 1:
-                    continue
-
-                # ---- Yield ----
-                yield_pct = premium / strike
-                annualized = yield_pct * (365 / dte)
-
-                # Minimum worthwhile premium
-                if yield_pct < 0.003:
-                    continue
-
-                score = self._score_csp(
-                    signals,
-                    yield_pct,
-                    annualized,
-                    distance_pct
-                )
-
-                opportunities.append({
-                    "symbol": symbol,
-                    "strategy": "CSP",
-                    "price": round(price, 2),
-                    "strike": strike,
-                    "expiry": expiry,
-                    "dte": dte,
-                    "premium": round(premium, 2),
-                    "yield_pct": round(yield_pct * 100, 2),
-                    "annualized": round(annualized * 100, 2),
-                    "distance_pct": round(distance_pct * 100, 2),
-                    "score": score,
-                    "recommendation": self._label(score),
-                    "volume": int(volume),
-                    "open_interest": int(oi)
-                })
-
-        print(f"{symbol}: Found {len(opportunities)} CSP opportunities")
-
-        return sorted(
-            opportunities,
-            key=lambda x: (
-                x["score"],
-                x["annualized"],
-                x["volume"]
-            ),
-            reverse=True
-        )
-
+    return sorted(
+        opportunities,
+        key=lambda x: x["score"],
+        reverse=True
+    )
     # --------------------------
     # Indicator Builder
     # --------------------------
