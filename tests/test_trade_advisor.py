@@ -11,7 +11,7 @@ from trade_advisor import (
 
 def test_buy_when_near_52w_low_above_200dma_and_low_rsi():
     data = {
-        "current_price": 90,
+        "current_price": 89,
         "52w_low": 85,
         "52w_high": 150,
         "dma_200": 88,

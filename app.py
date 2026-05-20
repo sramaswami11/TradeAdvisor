@@ -3,6 +3,8 @@ import re
 import json
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, session, abort
+from trade_advisor import get_trade_recommendation
+from options_engine import OptionsEngine
 
 load_dotenv()
 
@@ -28,7 +30,6 @@ if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY environment variable not set")
 
 DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]
-#ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "").lower()
 
 # =========================
 # Helpers
@@ -94,54 +95,63 @@ def validate_user_import_json(payload: dict):
     return errors, preview
 
 
-def decide_rating(snapshot: dict):
-    price = snapshot.get("current_price")
-    dma50 = snapshot.get("dma_50")
-    dma200 = snapshot.get("dma_200")
-    rsi = snapshot.get("rsi_14")
-
-    if price is None:
-        return "Hold", 0, "No price data available."
-
-    score = 0
-    reasons = []
-
-    if dma50 is not None:
-        score += 1 if price >= dma50 else -1
-        reasons.append("Price is above the 50 DMA." if price >= dma50 else "Price is below the 50 DMA.")
-
-    if dma200 is not None:
-        score += 2 if price >= dma200 else -2
-        reasons.append("Price is above the 200 DMA." if price >= dma200 else "Price is below the 200 DMA.")
-
-    if rsi is not None:
-        if rsi <= 30:
-            score += 1
-            reasons.append(f"RSI is low ({rsi}).")
-        elif rsi >= 70:
-            score -= 1
-            reasons.append(f"RSI is high ({rsi}).")
-        else:
-            reasons.append(f"RSI is neutral ({rsi}).")
-
-    if score >= 3:
-        return "Buy", 85, " ".join(reasons)
-    elif score >= 1:
-        return "Hold", 65, " ".join(reasons)
-    else:
-        return "Sell", 55, " ".join(reasons)
-
-
 def build_row(symbol: str):
     snap = fetch_snapshot(symbol)
-    rating, confidence, rationale = decide_rating(snap)
+    result = get_trade_recommendation(snap)
+
+    # DEBUG: inspect actual trade engine payload
+    print(f"{symbol} TRADE RESULT:", result)
+
+    rationale = ""
+
+    # -------------------------
+    # Flexible rationale parser
+    # -------------------------
+
+    # Legacy reasons list
+    if result.get("reasons"):
+        rationale = " ".join(map(str, result["reasons"]))
+
+    # Explanation field (string or list)
+    elif result.get("explanation"):
+        if isinstance(result["explanation"], list):
+            rationale = " ".join(map(str, result["explanation"]))
+        else:
+            rationale = str(result["explanation"])
+
+    # StrategyEngine rationale field
+    elif result.get("rationale"):
+        if isinstance(result["rationale"], list):
+            rationale = " ".join(map(str, result["rationale"]))
+        else:
+            rationale = str(result["rationale"])
+
+    # Signals dict fallback
+    elif result.get("signals"):
+        signals = result["signals"]
+
+        if isinstance(signals, dict):
+            signal_parts = []
+
+            for key, value in signals.items():
+                signal_parts.append(f"{key}: {value}")
+
+            rationale = " | ".join(signal_parts)
+
+        else:
+            rationale = str(signals)
+
+    # Full fallback
+    else:
+        rationale = "No rationale available."
+
     return {
         "symbol": symbol,
         "price": snap.get("current_price", "—"),
         "dma50": snap.get("dma_50", "—"),
         "dma200": snap.get("dma_200", "—"),
-        "rating": rating,
-        "confidence": confidence,
+        "rating": result.get("action", "HOLD").capitalize(),
+        "confidence": result.get("confidence", 0),
         "rationale": rationale,
     }
 
@@ -192,7 +202,9 @@ def dashboard():
 
     user = get_user_by_id(session["user_id"])
 
-    print("USER OBJECT:", user)
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
 
     if request.method == "POST":
         symbol = normalize_symbol(request.form.get("symbol"))
@@ -216,6 +228,53 @@ def dashboard():
     )
 
 
+@app.route("/csp/<symbol>")
+def view_csp(symbol):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    user = get_user_by_id(session["user_id"])
+
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+
+    engine = OptionsEngine()
+
+    try:
+        opportunities = engine.find_csp_opportunities(symbol.upper())
+
+        # -------------------------
+        # DEBUGGING OUTPUT
+        # -------------------------
+        print(f"========== CSP DEBUG FOR {symbol.upper()} ==========")
+        print("TOTAL OPPORTUNITIES:", len(opportunities))
+
+        for idx, opp in enumerate(opportunities):
+            print(f"#{idx+1}: {opp}")
+
+        if not opportunities:
+            print("NO CSP OPPORTUNITIES FOUND")
+            print("Possible causes:")
+            print("- Stock not above 200 DMA")
+            print("- No valid option expirations")
+            print("- No strikes within 5–15% OTM range")
+            print("- Premium too low")
+            print("- yfinance option chain empty")
+
+    except Exception as e:
+        print("========== CSP ENGINE ERROR ==========")
+        print(e)
+        opportunities = []
+
+    return render_template(
+        "csp_results.html",
+        symbol=symbol.upper(),
+        opportunities=opportunities,
+        user=user
+    )
+
+
 @app.route("/remove/<symbol>")
 def remove_ticker(symbol):
     remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
@@ -223,7 +282,7 @@ def remove_ticker(symbol):
 
 
 # =========================
-# ADMIN UPLOAD — FULL IMPLEMENTATION
+# ADMIN UPLOAD
 # =========================
 
 @app.route("/admin/upload-users", methods=["GET", "POST"])

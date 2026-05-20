@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CSP Opportunities - {{ symbol }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f7f9fc;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background: #f0f2f5;
+        }
+
+        .strong { color: green; font-weight: bold; }
+        .good { color: #2a7; font-weight: bold; }
+        .ok { color: orange; font-weight: bold; }
+        .weak { color: red; font-weight: bold; }
+
+        a {
+            text-decoration: none;
+            color: #4a6cf7;
+        }
+
+        .back {
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+    </style>
+</head>
+<body>
+
+<a class="back" href="{{ url_for('dashboard') }}">← Back to Dashboard</a>
+
+<h2>Cash Secured Put Opportunities for {{ symbol }}</h2>
+
+{% if opportunities %}
+<table>
+    <tr>
+        <th>Strike</th>
+        <th>Expiry</th>
+        <th>DTE</th>
+        <th>Premium</th>
+        <th>Yield %</th>
+        <th>Annualized %</th>
+        <th>Distance %</th>
+        <th>Score</th>
+        <th>Recommendation</th>
+    </tr>
+
+    {% for o in opportunities %}
+    <tr>
+        <td>{{ o.strike }}</td>
+        <td>{{ o.expiry }}</td>
+        <td>{{ o.dte }}</td>
+        <td>${{ o.premium }}</td>
+        <td>{{ o.yield_pct }}%</td>
+        <td>{{ o.annualized }}%</td>
+        <td>{{ o.distance_pct }}%</td>
+        <td>{{ o.score }}</td>
+        <td class="{{ o.recommendation|lower }}">{{ o.recommendation }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+{% else %}
+<p>No suitable CSP opportunities found for {{ symbol }}.</p>
+{% endif %}
+
+</body>
+</html>
