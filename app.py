@@ -6,6 +6,14 @@ from flask import Flask, render_template, request, redirect, url_for, session, a
 from trade_advisor import get_trade_recommendation
 from options_engine import OptionsEngine
 
+import yfinance as yf
+import pandas as pd
+
+print("\n" + "=" * 60)
+print("YFINANCE VERSION:", yf.__version__)
+print("PANDAS VERSION:", pd.__version__)
+print("=" * 60 + "\n")
+
 load_dotenv()
 
 from market_data.provider import fetch_snapshot

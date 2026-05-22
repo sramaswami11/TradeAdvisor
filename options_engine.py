@@ -14,6 +14,7 @@ from datetime import datetime
 from trade_advisor import StrategyEngine
 
 
+
 class OptionsEngine:
 
     def __init__(self):
@@ -21,6 +22,7 @@ class OptionsEngine:
 
     def find_csp_opportunities(self, symbol, max_dte=45):
 
+       
         print(f"=== CSP SCAN START: {symbol} ===")
 
         try:
@@ -203,6 +205,8 @@ class OptionsEngine:
 
                     except Exception as e:
                         print("ROW ERROR:", e)
+
+          
 
             # -----------------------------------
             # Final diagnostics
