@@ -40,8 +40,6 @@ class OptionsEngine:
                 print(f"{symbol}: unable to fetch history")
                 return []
 
-            print(hist.tail())
-
             price = float(hist["Close"].iloc[-1])
 
             print(f"CURRENT PRICE: {price}")
@@ -59,9 +57,9 @@ class OptionsEngine:
 
             strategy = StrategyEngine(data).evaluate()
 
-            print("STRATEGY:", strategy)
-
             signals = strategy.get("signals", {})
+
+            print("STRATEGY SIGNALS:", signals)
 
             # -----------------------------------
             # Trend filter
@@ -79,8 +77,6 @@ class OptionsEngine:
                 print(f"{symbol}: no option expirations returned")
                 return []
 
-            print("EXPIRATIONS:", expirations)
-
             opportunities = []
 
             # -----------------------------------
@@ -90,10 +86,13 @@ class OptionsEngine:
 
                 dte = self._days_to_expiry(expiry)
 
-                print(f"CHECKING EXPIRY {expiry} | DTE={dte}")
+                print(f"\nCHECKING EXPIRY {expiry} | DTE={dte}")
 
-                # Only scan 7–45 DTE
-                if dte <= 7 or dte > max_dte:
+                #
+                # NEW:
+                # allow 5 DTE+
+                #
+                if dte < 5 or dte > max_dte:
                     print("SKIPPING DTE")
                     continue
 
@@ -119,29 +118,67 @@ class OptionsEngine:
                     try:
 
                         strike = float(row["strike"])
-                        premium = float(row["bid"] or 0)
 
-                        if premium <= 0:
+                        bid = row.get("bid", 0)
+                        ask = row.get("ask", 0)
+                        last = row.get("lastPrice", 0)
+
+                        bid = 0 if pd.isna(bid) else float(bid)
+                        ask = 0 if pd.isna(ask) else float(ask)
+                        last = 0 if pd.isna(last) else float(last)
+
+                        #
+                        # NEW:
+                        # Better premium calculation
+                        #
+                        if last > 0:
+                            premium = last
+
+                        elif bid > 0 and ask > 0:
+                            premium = (bid + ask) / 2
+
+                        elif ask > 0:
+                            premium = ask * 0.95
+
+                        elif bid > 0:
+                            premium = bid
+
+                        else:
                             continue
 
-                        # Distance from current price
-                        distance_pct = (strike - price) / price
-
+                        #
+                        # NEW DEBUG
+                        #
                         print(
-                            f"STRIKE={strike} "
-                            f"PREMIUM={premium} "
-                            f"DIST={distance_pct:.2%}"
+                            f"STRIKE={strike:.2f} "
+                            f"BID={bid:.2f} "
+                            f"ASK={ask:.2f} "
+                            f"LAST={last:.2f} "
+                            f"PREM={premium:.2f}"
                         )
 
-                        # Want puts 5–15% OTM
-                        if distance_pct > -0.05 or distance_pct < -0.15:
+                        distance_pct = (strike - price) / price
+
+                        #
+                        # NEW:
+                        # 2%–18% OTM CSP window
+                        #
+                        if distance_pct > -0.02 or distance_pct < -0.18:
                             continue
 
-                        # Yield calculations
-                        yield_pct = premium / strike
-                        annualized = yield_pct * (365 / dte)
+                        #
+                        # Optional liquidity filter
+                        #
+                        if ask > 0 and bid > 0:
 
-                        # Score setup
+                            spread_pct = (ask - bid) / ask
+
+                            if spread_pct > 0.50:
+                                continue
+
+                        yield_pct = premium / strike
+                        annualized = yield_pct * (365 / max(dte, 1))
+
                         score = self._score_csp(
                             signals,
                             yield_pct,
@@ -153,7 +190,7 @@ class OptionsEngine:
                             "symbol": symbol,
                             "strategy": "CSP",
                             "price": round(price, 2),
-                            "strike": strike,
+                            "strike": round(strike, 2),
                             "expiry": expiry,
                             "dte": dte,
                             "premium": round(premium, 2),
@@ -176,11 +213,10 @@ class OptionsEngine:
             if not opportunities:
                 print("NO CSP OPPORTUNITIES FOUND")
                 print("Possible causes:")
-                print("- Stock not above 200 DMA")
-                print("- No valid option expirations")
-                print("- No strikes within 5–15% OTM range")
-                print("- Premium too low")
-                print("- yfinance option chain empty")
+                print("- No strikes in OTM range")
+                print("- Liquidity filter removing contracts")
+                print("- Option chain missing premiums")
+                print("- yfinance returned incomplete data")
 
             return sorted(
                 opportunities,
@@ -192,6 +228,7 @@ class OptionsEngine:
 
             print(f"CSP ENGINE FAILURE FOR {symbol}: {e}")
             return []
+
     # --------------------------
     # Indicator Builder
     # --------------------------
