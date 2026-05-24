@@ -7,6 +7,8 @@ Uses:
 - Scoring model (premium + safety)
 """
 
+import traceback
+
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
@@ -31,6 +33,7 @@ class OptionsEngine:
             # -----------------------------------
             # Fetch recent price history
             # -----------------------------------
+            print("FETCHING HISTORY...")
             hist = ticker.history(
                 period="5d",
                 auto_adjust=True
@@ -73,7 +76,9 @@ class OptionsEngine:
             # -----------------------------------
             # Options availability
             # -----------------------------------
+            print("FETCHING EXPIRATIONS...")
             expirations = ticker.options
+            print("EXPIRATIONS FETCH COMPLETE")
 
             if not expirations:
                 print(f"{symbol}: no option expirations returned")
@@ -99,7 +104,9 @@ class OptionsEngine:
                     continue
 
                 try:
+                    print(f"FETCHING OPTION CHAIN {expiry}...")
                     chain = ticker.option_chain(expiry)
+                    print(f"OPTION CHAIN COMPLETE {expiry}")
                     puts = chain.puts
 
                 except Exception as e:
@@ -229,7 +236,9 @@ class OptionsEngine:
             )
 
         except Exception as e:
-
+            print("========== EXCEPTION ==========")
+            traceback.print_exc()
+            print("===============================")
             print(f"CSP ENGINE FAILURE FOR {symbol}: {e}")
             return []
 
