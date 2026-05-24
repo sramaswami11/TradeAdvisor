@@ -34,10 +34,30 @@ class OptionsEngine:
             # Fetch recent price history
             # -----------------------------------
             print("FETCHING HISTORY...")
-            hist = ticker.history(
-                period="5d",
-                auto_adjust=True
-            )
+            hist = None
+
+            for attempt in range(3):
+
+                try:
+
+                    print(f"HISTORY ATTEMPT {attempt + 1}")
+
+                    hist = ticker.history(
+                        period="5d",
+                        auto_adjust=True
+                    )
+
+                    if hist is not None and not hist.empty:
+                        break
+
+                except Exception as ex:
+
+                    print(
+                        f"HISTORY ATTEMPT {attempt + 1} FAILED:",
+                        ex
+                    )
+
+                    time.sleep(3)
 
             print("HIST EMPTY:", hist.empty)
 
