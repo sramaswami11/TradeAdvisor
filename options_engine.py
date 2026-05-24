@@ -8,6 +8,7 @@ Uses:
 """
 
 import traceback
+import time
 
 import pandas as pd
 import yfinance as yf
@@ -16,16 +17,42 @@ from datetime import datetime
 from trade_advisor import StrategyEngine
 
 
-
 class OptionsEngine:
+
+    # -----------------------------------
+    # 5 minute in-memory cache
+    # -----------------------------------
+    _cache = {}
+    CACHE_SECONDS = 300
 
     def __init__(self):
         pass
 
     def find_csp_opportunities(self, symbol, max_dte=45):
 
-       
         print(f"=== CSP SCAN START: {symbol} ===")
+
+        # -----------------------------------
+        # Cache lookup
+        # -----------------------------------
+        cache_key = symbol.upper()
+
+        cached = self._cache.get(cache_key)
+
+        if cached:
+
+            cache_time, cache_results = cached
+
+            age = time.time() - cache_time
+
+            if age < self.CACHE_SECONDS:
+
+                print(
+                    f"USING CACHE FOR {symbol} "
+                    f"(age={age:.0f}s)"
+                )
+
+                return cache_results
 
         try:
             ticker = yf.Ticker(symbol)
@@ -116,7 +143,6 @@ class OptionsEngine:
                 print(f"\nCHECKING EXPIRY {expiry} | DTE={dte}")
 
                 #
-                # NEW:
                 # allow 5 DTE+
                 #
                 if dte < 5 or dte > max_dte:
@@ -157,7 +183,6 @@ class OptionsEngine:
                         last = 0 if pd.isna(last) else float(last)
 
                         #
-                        # NEW:
                         # Better premium calculation
                         #
                         if last > 0:
@@ -175,9 +200,6 @@ class OptionsEngine:
                         else:
                             continue
 
-                        #
-                        # NEW DEBUG
-                        #
                         print(
                             f"STRIKE={strike:.2f} "
                             f"BID={bid:.2f} "
@@ -186,10 +208,11 @@ class OptionsEngine:
                             f"PREM={premium:.2f}"
                         )
 
-                        distance_pct = (strike - price) / price
+                        distance_pct = (
+                            strike - price
+                        ) / price
 
                         #
-                        # NEW:
                         # 2%–18% OTM CSP window
                         #
                         if distance_pct > -0.02 or distance_pct < -0.18:
@@ -206,7 +229,9 @@ class OptionsEngine:
                                 continue
 
                         yield_pct = premium / strike
-                        annualized = yield_pct * (365 / max(dte, 1))
+                        annualized = yield_pct * (
+                            365 / max(dte, 1)
+                        )
 
                         score = self._score_csp(
                             signals,
@@ -223,17 +248,21 @@ class OptionsEngine:
                             "expiry": expiry,
                             "dte": dte,
                             "premium": round(premium, 2),
-                            "yield_pct": round(yield_pct * 100, 2),
-                            "annualized": round(annualized * 100, 2),
-                            "distance_pct": round(distance_pct * 100, 2),
+                            "yield_pct": round(
+                                yield_pct * 100, 2
+                            ),
+                            "annualized": round(
+                                annualized * 100, 2
+                            ),
+                            "distance_pct": round(
+                                distance_pct * 100, 2
+                            ),
                             "score": score,
                             "recommendation": self._label(score)
                         })
 
                     except Exception as e:
                         print("ROW ERROR:", e)
-
-          
 
             # -----------------------------------
             # Final diagnostics
@@ -249,17 +278,33 @@ class OptionsEngine:
                 print("- Option chain missing premiums")
                 print("- yfinance returned incomplete data")
 
-            return sorted(
+            results = sorted(
                 opportunities,
                 key=lambda x: x["score"],
                 reverse=True
             )
+
+            # -----------------------------------
+            # Save to cache
+            # -----------------------------------
+            self._cache[cache_key] = (
+                time.time(),
+                results
+            )
+
+            print(
+                f"CACHED {len(results)} RESULTS "
+                f"FOR {symbol}"
+            )
+
+            return results
 
         except Exception as e:
             print("========== EXCEPTION ==========")
             traceback.print_exc()
             print("===============================")
             print(f"CSP ENGINE FAILURE FOR {symbol}: {e}")
+
             return []
 
     # --------------------------
@@ -279,7 +324,6 @@ class OptionsEngine:
         low_52w = hist["Close"].min()
         high_52w = hist["Close"].max()
 
-        # Placeholder RSI
         rsi = 50
 
         return {
