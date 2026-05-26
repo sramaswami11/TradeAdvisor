@@ -178,6 +178,8 @@ class OptionsEngine:
                             f"{attempt + 1}"
                         )
 
+                        print("TICKER OBJECT:", ticker)
+
                         expirations = ticker.options
 
                         if expirations:
@@ -202,6 +204,9 @@ class OptionsEngine:
                             f"{attempt + 1} FAILED:",
                             ex
                         )
+
+                        print(type(ex))
+                        print(repr(ex))
 
                         time.sleep(3)
 
