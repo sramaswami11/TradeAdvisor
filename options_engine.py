@@ -38,6 +38,8 @@ class OptionsEngine:
 
         print(f"=== CSP SCAN START: {symbol} ===")
 
+        print("OPTIONS_ENGINE BUILD 2026-05-26-A")
+
         cache_key = symbol.upper()
 
         # -----------------------------------
