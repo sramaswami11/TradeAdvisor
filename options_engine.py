@@ -19,18 +19,6 @@ from trade_advisor import StrategyEngine
 
 class OptionsEngine:
 
-    # -----------------------------------
-    # CSP result cache (5 min)
-    # -----------------------------------
-    _cache = {}
-    CACHE_SECONDS = 300
-
-    # -----------------------------------
-    # Expiration cache (1 hour)
-    # -----------------------------------
-    _expiration_cache = {}
-    EXPIRATION_CACHE_SECONDS = 3600
-
     def __init__(self):
         pass
 
@@ -38,39 +26,13 @@ class OptionsEngine:
 
         print(f"=== CSP SCAN START: {symbol} ===")
 
-        print("OPTIONS_ENGINE BUILD 2026-05-26-A")
-
-        cache_key = symbol.upper()
-
-        # -----------------------------------
-        # CSP result cache lookup
-        # -----------------------------------
-        cached = self._cache.get(cache_key)
-
-        if cached:
-
-            cache_time, cache_results = cached
-
-            age = time.time() - cache_time
-
-            if age < self.CACHE_SECONDS:
-
-                print(
-                    f"USING CSP CACHE FOR {symbol} "
-                    f"(age={age:.0f}s)"
-                )
-
-                return cache_results
-
         try:
-
             ticker = yf.Ticker(symbol)
 
             # -----------------------------------
             # Fetch recent price history
             # -----------------------------------
             print("FETCHING HISTORY...")
-
             hist = None
 
             for attempt in range(3):
@@ -85,9 +47,7 @@ class OptionsEngine:
                     )
 
                     if hist is not None and not hist.empty:
-
                         print("HISTORY FETCH SUCCESS")
-
                         break
 
                 except Exception as ex:
@@ -100,9 +60,7 @@ class OptionsEngine:
                     time.sleep(3)
 
             if hist is None or hist.empty:
-
-                print("HISTORY FETCH FAILED")
-
+                print(f"{symbol}: unable to fetch history")
                 return []
 
             print("HIST EMPTY:", hist.empty)
@@ -114,10 +72,7 @@ class OptionsEngine:
             # -----------------------------------
             # Build indicators
             # -----------------------------------
-            data = self._build_indicator_data(
-                ticker,
-                price
-            )
+            data = self._build_indicator_data(ticker, price)
 
             print("INDICATOR DATA:", data)
 
@@ -135,194 +90,95 @@ class OptionsEngine:
             # Trend filter
             # -----------------------------------
             if not signals.get("above_200_dma"):
-
                 print("FAILED TREND FILTER")
-
                 return []
 
             # -----------------------------------
-            # Expiration cache lookup
+            # Options availability
             # -----------------------------------
+            print("FETCHING EXPIRATIONS...")
+
             expirations = None
 
-            exp_cached = self._expiration_cache.get(
-                cache_key
-            )
+            for attempt in range(3):
 
-            if exp_cached:
+                try:
 
-                exp_cache_time, exp_cache_data = exp_cached
+                    print(f"EXPIRATION ATTEMPT {attempt + 1}")
 
-                exp_age = time.time() - exp_cache_time
+                    expirations = ticker.options
 
-                if exp_age < self.EXPIRATION_CACHE_SECONDS:
+                    if expirations:
+                        print("EXPIRATIONS FETCH SUCCESS")
+                        break
 
-                    expirations = exp_cache_data
+                except Exception as ex:
 
                     print(
-                        f"USING EXPIRATION CACHE "
-                        f"(age={exp_age:.0f}s)"
+                        f"EXPIRATION ATTEMPT {attempt + 1} FAILED:",
+                        ex
                     )
 
-            # -----------------------------------
-            # Fetch expirations
-            # -----------------------------------
-            if not expirations:
+                    time.sleep(3)
 
-                print("FETCHING EXPIRATIONS...")
+            if not expirations:
+                print(f"{symbol}: no option expirations returned")
+                return []
+
+            opportunities = []
+
+            # -----------------------------------
+            # Loop expirations
+            # -----------------------------------
+            for expiry in expirations:
+
+                dte = self._days_to_expiry(expiry)
+
+                print(f"\nCHECKING EXPIRY {expiry} | DTE={dte}")
+
+                # Allow 5–45 DTE
+                if dte < 5 or dte > max_dte:
+                    print("SKIPPING DTE")
+                    continue
+
+                chain = None
 
                 for attempt in range(3):
 
                     try:
 
                         print(
-                            f"EXPIRATION ATTEMPT "
-                            f"{attempt + 1}"
+                            f"OPTION CHAIN ATTEMPT "
+                            f"{attempt + 1} FOR {expiry}"
                         )
 
-                        print("TICKER OBJECT:", ticker)
+                        chain = ticker.option_chain(expiry)
 
-                        expirations = ticker.options
+                        print(
+                            f"OPTION CHAIN FETCH SUCCESS "
+                            f"{expiry}"
+                        )
 
-                        if expirations:
-
-                            print(
-                                "EXPIRATIONS FETCH SUCCESS"
-                            )
-
-                            self._expiration_cache[
-                                cache_key
-                            ] = (
-                                time.time(),
-                                expirations
-                            )
-
-                            break
+                        break
 
                     except Exception as ex:
 
                         print(
-                            f"EXPIRATION ATTEMPT "
+                            f"OPTION CHAIN ATTEMPT "
                             f"{attempt + 1} FAILED:",
                             ex
                         )
 
-                        print(type(ex))
-                        print(repr(ex))
-
                         time.sleep(3)
 
-            if not expirations:
-
-                print(
-                    f"{symbol}: no option "
-                    f"expirations returned"
-                )
-
-                return []
-
-            opportunities = []
-
-            # -----------------------------------
-            # Reduce Yahoo load:
-            # only first 4 valid expirations
-            # -----------------------------------
-            valid_expirations = []
-
-            for expiry in expirations:
-
-                dte = self._days_to_expiry(expiry)
-
-                if 5 <= dte <= max_dte:
-                    valid_expirations.append(expiry)
-
-            valid_expirations = valid_expirations[:4]
-
-            print(
-                f"VALID EXPIRATIONS: "
-                f"{valid_expirations}"
-            )
-
-            # -----------------------------------
-            # Loop expirations
-            # -----------------------------------
-            for expiry in valid_expirations:
-
-                dte = self._days_to_expiry(expiry)
-
-                print(
-                    f"\nCHECKING EXPIRY "
-                    f"{expiry} | DTE={dte}"
-                )
-
-                try:
-
-                    chain = None
-
-                    # -----------------------------------
-                    # Retry option chain fetch
-                    # -----------------------------------
-                    for attempt in range(3):
-
-                        try:
-
-                            print(
-                                f"OPTION CHAIN ATTEMPT "
-                                f"{attempt + 1} "
-                                f"FOR {expiry}"
-                            )
-
-                            chain = ticker.option_chain(
-                                expiry
-                            )
-
-                            if chain is not None:
-
-                                print(
-                                    f"OPTION CHAIN SUCCESS "
-                                    f"{expiry}"
-                                )
-
-                                break
-
-                        except Exception as ex:
-
-                            print(
-                                f"OPTION CHAIN ATTEMPT "
-                                f"{attempt + 1} FAILED "
-                                f"FOR {expiry}:",
-                                ex
-                            )
-
-                            time.sleep(2)
-
-                    if chain is None:
-
-                        print(
-                            f"FAILED OPTION CHAIN "
-                            f"{expiry}"
-                        )
-
-                        continue
-
-                    # slight pause to reduce throttling
-                    time.sleep(0.5)
-
-                    puts = chain.puts
-
-                except Exception as e:
-
-                    print(
-                        f"OPTION CHAIN ERROR "
-                        f"{expiry}: {e}"
-                    )
-
+                if chain is None:
+                    print(f"FAILED OPTION CHAIN {expiry}")
                     continue
 
+                puts = chain.puts
+
                 if puts is None or puts.empty:
-
                     print(f"NO PUTS FOR {expiry}")
-
                     continue
 
                 print(f"PUT COUNT: {len(puts)}")
@@ -340,55 +196,44 @@ class OptionsEngine:
                         ask = row.get("ask", 0)
                         last = row.get("lastPrice", 0)
 
-                        bid = (
-                            0 if pd.isna(bid)
-                            else float(bid)
-                        )
-
-                        ask = (
-                            0 if pd.isna(ask)
-                            else float(ask)
-                        )
-
-                        last = (
-                            0 if pd.isna(last)
-                            else float(last)
-                        )
+                        bid = 0 if pd.isna(bid) else float(bid)
+                        ask = 0 if pd.isna(ask) else float(ask)
+                        last = 0 if pd.isna(last) else float(last)
 
                         # -----------------------------------
-                        # Premium calculation
+                        # Better premium calculation
                         # -----------------------------------
                         if last > 0:
-
                             premium = last
 
                         elif bid > 0 and ask > 0:
-
                             premium = (bid + ask) / 2
 
                         elif ask > 0:
-
                             premium = ask * 0.95
 
                         elif bid > 0:
-
                             premium = bid
 
                         else:
-
                             continue
+
+                        print(
+                            f"STRIKE={strike:.2f} "
+                            f"BID={bid:.2f} "
+                            f"ASK={ask:.2f} "
+                            f"LAST={last:.2f} "
+                            f"PREM={premium:.2f}"
+                        )
 
                         distance_pct = (
                             strike - price
                         ) / price
 
                         # -----------------------------------
-                        # 2%–18% OTM window
+                        # 2%–18% OTM CSP window
                         # -----------------------------------
-                        if (
-                            distance_pct > -0.02
-                            or distance_pct < -0.18
-                        ):
+                        if distance_pct > -0.02 or distance_pct < -0.18:
                             continue
 
                         # -----------------------------------
@@ -396,18 +241,15 @@ class OptionsEngine:
                         # -----------------------------------
                         if ask > 0 and bid > 0:
 
-                            spread_pct = (
-                                ask - bid
-                            ) / ask
+                            spread_pct = (ask - bid) / ask
 
                             if spread_pct > 0.50:
                                 continue
 
                         yield_pct = premium / strike
 
-                        annualized = (
-                            yield_pct *
-                            (365 / max(dte, 1))
+                        annualized = yield_pct * (
+                            365 / max(dte, 1)
                         )
 
                         score = self._score_csp(
@@ -418,118 +260,56 @@ class OptionsEngine:
                         )
 
                         opportunities.append({
-
                             "symbol": symbol,
-
                             "strategy": "CSP",
-
                             "price": round(price, 2),
-
                             "strike": round(strike, 2),
-
                             "expiry": expiry,
-
                             "dte": dte,
-
-                            "premium": round(
-                                premium,
-                                2
-                            ),
-
+                            "premium": round(premium, 2),
                             "yield_pct": round(
-                                yield_pct * 100,
-                                2
+                                yield_pct * 100, 2
                             ),
-
                             "annualized": round(
-                                annualized * 100,
-                                2
+                                annualized * 100, 2
                             ),
-
                             "distance_pct": round(
-                                distance_pct * 100,
-                                2
+                                distance_pct * 100, 2
                             ),
-
                             "score": score,
-
-                            "recommendation":
-                                self._label(score)
+                            "recommendation": self._label(score)
                         })
 
                     except Exception as e:
-
                         print("ROW ERROR:", e)
 
             # -----------------------------------
             # Final diagnostics
             # -----------------------------------
-            print(
-                f"========== CSP DEBUG "
-                f"FOR {symbol} =========="
-            )
-
-            print(
-                f"TOTAL OPPORTUNITIES: "
-                f"{len(opportunities)}"
-            )
+            print(f"========== CSP DEBUG FOR {symbol} ==========")
+            print(f"TOTAL OPPORTUNITIES: {len(opportunities)}")
 
             if not opportunities:
-
                 print("NO CSP OPPORTUNITIES FOUND")
-
                 print("Possible causes:")
-
                 print("- No strikes in OTM range")
+                print("- Liquidity filter removing contracts")
+                print("- Option chain missing premiums")
+                print("- yfinance returned incomplete data")
 
-                print(
-                    "- Liquidity filter "
-                    "removing contracts"
-                )
-
-                print(
-                    "- Option chain missing "
-                    "premiums"
-                )
-
-                print(
-                    "- yfinance returned "
-                    "incomplete data"
-                )
-
-            results = sorted(
+            return sorted(
                 opportunities,
                 key=lambda x: x["score"],
                 reverse=True
             )
 
-            # -----------------------------------
-            # Save CSP cache
-            # -----------------------------------
-            self._cache[cache_key] = (
-                time.time(),
-                results
-            )
-
-            print(
-                f"CACHED {len(results)} RESULTS "
-                f"FOR {symbol}"
-            )
-
-            return results
-
         except Exception as e:
 
             print("========== EXCEPTION ==========")
-
             traceback.print_exc()
-
             print("===============================")
 
-            print(
-                f"CSP ENGINE FAILURE "
-                f"FOR {symbol}: {e}"
-            )
+            print(f"CSP ENGINE FAILURE FOR {symbol}: {e}")
 
             return []
 
@@ -541,82 +321,48 @@ class OptionsEngine:
 
         hist = None
 
-        # -----------------------------------
-        # Retry long history fetch
-        # -----------------------------------
         for attempt in range(3):
 
             try:
 
                 print(
-                    f"INDICATOR HISTORY "
-                    f"ATTEMPT {attempt + 1}"
+                    f"INDICATOR HISTORY ATTEMPT "
+                    f"{attempt + 1}"
                 )
 
                 hist = ticker.history(period="1y")
 
                 if hist is not None and not hist.empty:
-
                     break
 
             except Exception as ex:
 
                 print(
-                    f"INDICATOR HISTORY "
-                    f"ATTEMPT {attempt + 1} FAILED:",
+                    f"INDICATOR HISTORY FAILED:",
                     ex
                 )
 
                 time.sleep(3)
 
-        if hist is None or hist.empty:
-
+        if hist is None or hist.empty or len(hist) < 200:
             return {}
 
-        if len(hist) < 200:
-
-            return {}
-
-        dma50 = (
-            hist["Close"]
-            .rolling(50)
-            .mean()
-            .iloc[-1]
-        )
-
-        dma200 = (
-            hist["Close"]
-            .rolling(200)
-            .mean()
-            .iloc[-1]
-        )
+        dma50 = hist["Close"].rolling(50).mean().iloc[-1]
+        dma200 = hist["Close"].rolling(200).mean().iloc[-1]
 
         low_52w = hist["Close"].min()
-
         high_52w = hist["Close"].max()
 
         rsi = 50
 
         return {
-
             "current_price": price,
-
             "52w_low": float(low_52w),
-
             "52w_high": float(high_52w),
-
-            "dma_200": (
-                float(dma200)
-                if pd.notna(dma200)
-                else None
-            ),
-
-            "dma_50": (
-                float(dma50)
-                if pd.notna(dma50)
-                else None
-            ),
-
+            "dma_200": float(dma200)
+            if pd.notna(dma200) else None,
+            "dma_50": float(dma50)
+            if pd.notna(dma50) else None,
             "rsi_14": rsi
         }
 
