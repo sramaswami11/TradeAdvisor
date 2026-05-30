@@ -32,6 +32,11 @@ class OptionsEngine:
     # -----------------------------------
     EXPIRATION_CACHE_SECONDS = 86400  # 24 hours
 
+    OPTION_CHAIN_CACHE = {}
+    OPTION_CHAIN_CACHE_SECONDS = 1800
+
+    MAX_EXPIRATIONS_TO_SCAN = 5
+
     def __init__(self):
         pass
 
@@ -140,7 +145,33 @@ class OptionsEngine:
             # -----------------------------------
             # Loop expirations
             # -----------------------------------
+            valid_expirations = []
+
             for expiry in expirations:
+
+                dte = self._days_to_expiry(expiry)
+
+                if 5 <= dte <= max_dte:
+
+                    valid_expirations.append(
+                        (expiry, dte)
+                    )
+
+            valid_expirations.sort(
+                key=lambda x: x[1]
+            )
+
+            valid_expirations = valid_expirations[
+                :self.MAX_EXPIRATIONS_TO_SCAN
+            ]
+
+            print(
+                f"SCANNING "
+                f"{len(valid_expirations)} "
+                f"EXPIRATIONS"
+            )
+
+            for expiry, dte in valid_expirations:
 
                 dte = self._days_to_expiry(expiry)
 
@@ -157,41 +188,13 @@ class OptionsEngine:
                     print("SKIPPING DTE")
                     continue
 
-                chain = None
-
-                # -----------------------------------
-                # Retry option chain
-                # -----------------------------------
-                for attempt in range(3):
-
-                    try:
-
-                        print(
-                            f"OPTION CHAIN ATTEMPT "
-                            f"{attempt + 1} "
-                            f"FOR {expiry}"
-                        )
-
-                        chain = ticker.option_chain(
-                            expiry
-                        )
-
-                        print(
-                            f"OPTION CHAIN FETCH SUCCESS "
-                            f"{expiry}"
-                        )
-
-                        break
-
-                    except Exception as ex:
-
-                        print(
-                            f"OPTION CHAIN ATTEMPT "
-                            f"{attempt + 1} FAILED:",
-                            ex
-                        )
-
-                        time.sleep(3)
+               
+                chain = self._get_cached_option_chain(
+                    ticker,
+                    symbol,
+                    expiry
+                )
+                
 
                 if chain is None:
 
@@ -537,6 +540,71 @@ class OptionsEngine:
                 "CACHE SAVE ERROR:",
                 ex
             )
+
+        # -----------------------------------
+        # Cached option chain fetch
+        # -----------------------------------
+    def _get_cached_option_chain(
+        self,
+        ticker,
+        symbol,
+        expiry
+    ):
+
+        key = f"{symbol}_{expiry}"
+
+        cached = self.OPTION_CHAIN_CACHE.get(
+            key
+        )
+
+        if cached:
+
+            cache_time, chain = cached
+
+            age = (
+                time.time()
+                - cache_time
+            )
+
+            if (
+                age
+                < self.OPTION_CHAIN_CACHE_SECONDS
+            ):
+
+                print(
+                    f"USING OPTION "
+                    f"CHAIN CACHE "
+                    f"{expiry}"
+                )
+
+                return chain
+
+        try:
+
+            chain = ticker.option_chain(
+                expiry
+            )
+
+            self.OPTION_CHAIN_CACHE[key] = (
+                time.time(),
+                chain
+            )
+
+            print(
+                f"CACHED OPTION CHAIN "
+                f"{expiry}"
+            )
+
+            return chain
+
+        except Exception as ex:
+
+            print(
+                f"OPTION CHAIN FAILED "
+                f"{expiry}: {ex}"
+            )
+
+            return None
 
     # -----------------------------------
     # Indicator Builder
