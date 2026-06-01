@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Top CSP Opportunities</title>
+</head>
+<body>
+
+<h1>Top CSP Opportunities</h1>
+
+<table border="1" cellpadding="5">
+    <tr>
+        <th>Symbol</th>
+        <th>Price</th>
+        <th>Strike</th>
+        <th>Expiry</th>
+        <th>DTE</th>
+        <th>Premium</th>
+        <th>Yield %</th>
+        <th>Distance %</th>
+        <th>Score</th>
+        <th>Rating</th>
+    </tr>
+
+    {% for opp in opportunities %}
+    <tr>
+        <td>{{ opp.symbol }}</td>
+        <td>{{ opp.price }}</td>
+        <td>{{ opp.strike }}</td>
+        <td>{{ opp.expiry }}</td>
+        <td>{{ opp.dte }}</td>
+        <td>{{ opp.premium }}</td>
+        <td>{{ opp.yield_pct }}</td>
+        <td>{{ opp.distance_pct }}</td>
+        <td>{{ opp.score }}</td>
+        <td>{{ opp.recommendation }}</td>
+    </tr>
+    {% endfor %}
+
+</table>
+
+</body>
+</html>

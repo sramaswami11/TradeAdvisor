@@ -28,6 +28,10 @@ from database import (
     update_user_name_if_missing
 )
 
+from top_csp import get_top_csp_opportunities
+
+options_engine = OptionsEngine()
+
 app = Flask(__name__)
 
 # =========================
@@ -247,10 +251,10 @@ def view_csp(symbol):
         session.clear()
         return redirect(url_for("login"))
 
-    engine = OptionsEngine()
+    #engine = OptionsEngine()
 
     try:
-        opportunities = engine.find_csp_opportunities(symbol.upper())
+        opportunities = options_engine.find_csp_opportunities(symbol.upper())
 
         # -------------------------
         # DEBUGGING OUTPUT
@@ -349,6 +353,22 @@ def admin_upload_users():
         <button type="submit">Upload & Import</button>
     </form>
     """
+
+@app.route("/top-csp")
+def top_csp():
+
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+
+    opportunities = get_top_csp_opportunities()
+
+    print("TOP CSP COUNT:", len(opportunities))
+
+    return render_template(
+        "top_csp.html",
+        opportunities=opportunities
+    )
 
 
 @app.route("/logout")
