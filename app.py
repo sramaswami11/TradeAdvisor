@@ -363,6 +363,9 @@ def top_csp():
 
     opportunities = get_top_csp_opportunities()
 
+    for r in opportunities[:5]:
+        print(r["symbol"], r["score"])
+
     print("TOP CSP COUNT:", len(opportunities))
 
     return render_template(

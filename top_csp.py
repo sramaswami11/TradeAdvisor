@@ -7,18 +7,27 @@ WATCHLIST = [
     "QQQ",
     "NVDA",
     "MSFT",
-    "META",
-    "GOOGL",
-    "AMZN",
-    "AAPL",
-    "AVGO",
-    "TSM",
-    "AMD",
-    "PLTR",
-    "JPM",
-    "COST",
-    "V"
+    "META"
+    
 ]
+
+# WATCHLIST = [
+#     "SPY",
+#     "QQQ",
+#     "NVDA",
+#     "MSFT",
+#     "META",
+#     "GOOGL",
+#     "AMZN",
+#     "AAPL",
+#     "AVGO",
+#     "TSM",
+#     "AMD",
+#     "PLTR",
+#     "JPM",
+#     "COST",
+#     "V"
+# ]
 
 def get_top_csp_opportunities():
 
@@ -33,14 +42,19 @@ def get_top_csp_opportunities():
                 .find_csp_opportunities(symbol)
             )
 
+            print(
+            f"{symbol}: {len(opportunities)} opportunities"
+            )
+
+
             if opportunities:
 
                 results.extend(
                     opportunities[:3]
                 )
 
-        except Exception:
-            pass
+        except Exception as ex:
+            print(f"TOP CSP ERROR {symbol}: {ex}")
 
     results.sort(
         key=lambda x: x["score"],
