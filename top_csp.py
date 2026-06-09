@@ -1,5 +1,9 @@
+import time
 from options_engine import OptionsEngine
 
+# Single shared instance — both app.py and
+# top_csp.py import this, so the in-memory
+# option chain cache is shared across all calls
 options_engine = OptionsEngine()
 
 WATCHLIST = [
@@ -7,33 +11,33 @@ WATCHLIST = [
     "QQQ",
     "NVDA",
     "MSFT",
-    "META"
-    
+    "META",
+    "GOOGL",
+    "AMZN",
+    "AAPL",
+    "AVGO",
+    "TSM",
+    "AMD",
+    "PLTR",
+    "JPM",
+    "COST",
+    "V"
 ]
 
-# WATCHLIST = [
-#     "SPY",
-#     "QQQ",
-#     "NVDA",
-#     "MSFT",
-#     "META",
-#     "GOOGL",
-#     "AMZN",
-#     "AAPL",
-#     "AVGO",
-#     "TSM",
-#     "AMD",
-#     "PLTR",
-#     "JPM",
-#     "COST",
-#     "V"
-# ]
 
 def get_top_csp_opportunities():
 
     results = []
 
-    for symbol in WATCHLIST:
+    for idx, symbol in enumerate(WATCHLIST):
+
+        # -----------------------------------
+        # Stagger requests to avoid Yahoo
+        # rate-limiting on Render's shared IPs.
+        # Skip delay on the first ticker.
+        # -----------------------------------
+        if idx > 0:
+            time.sleep(2)
 
         try:
 
@@ -43,15 +47,11 @@ def get_top_csp_opportunities():
             )
 
             print(
-            f"{symbol}: {len(opportunities)} opportunities"
+                f"{symbol}: {len(opportunities)} opportunities"
             )
 
-
             if opportunities:
-
-                results.extend(
-                    opportunities[:3]
-                )
+                results.extend(opportunities[:3])
 
         except Exception as ex:
             print(f"TOP CSP ERROR {symbol}: {ex}")
