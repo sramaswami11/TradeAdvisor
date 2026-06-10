@@ -6,7 +6,7 @@ from options_engine import OptionsEngine
 # option chain cache is shared across all calls
 options_engine = OptionsEngine()
 
-WATCHLIST = [
+""" WATCHLIST = [
     "SPY",
     "QQQ",
     "NVDA",
@@ -22,6 +22,12 @@ WATCHLIST = [
     "JPM",
     "COST",
     "V"
+] """
+
+WATCHLIST = [
+    "SPY",
+    "QQQ",
+    
 ]
 
 
