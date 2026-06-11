@@ -404,6 +404,26 @@ def debug_options():
             "error": str(ex)
         }
 
+@app.route("/debug-history")
+def debug_history():
+
+    import yfinance as yf
+
+    ticker = yf.Ticker("SPY")
+
+    try:
+
+        hist = ticker.history(period="5d")
+
+        return {
+            "rows": len(hist)
+        }
+
+    except Exception as ex:
+
+        return {
+            "error": str(ex)
+        }
 
 if __name__ == "__main__":
     init_db()
