@@ -354,6 +354,9 @@ class OptionsEngine:
 
                 print(f"EXPIRATION ATTEMPT {attempt + 1}")
 
+                print("FETCHING OPTIONS FOR:", symbol)
+                print("YF VERSION:", yf.__version__)
+
                 expirations = ticker.options
 
                 if expirations:

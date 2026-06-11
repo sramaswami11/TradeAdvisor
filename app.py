@@ -379,6 +379,31 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
+@app.route("/debug-options")
+def debug_options():
+
+    import yfinance as yf
+
+    ticker = yf.Ticker("SPY")
+
+    try:
+        opts = ticker.options
+
+        print("OPTIONS:", opts)
+
+        return {
+            "count": len(opts),
+            "options": list(opts[:5])
+        }
+
+    except Exception as ex:
+
+        print("OPTION ERROR:", ex)
+
+        return {
+            "error": str(ex)
+        }
+
 
 if __name__ == "__main__":
     init_db()
