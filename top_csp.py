@@ -1,34 +1,58 @@
+import json
+import os
 import time
 from options_engine import get_shared_engine
 
-options_engine = get_shared_engine()
+# ------------------------------------
+# Render-safe: /tmp is writable and
+# survives in-process restarts
+# ------------------------------------
+_CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
+_TOP_CSP_CACHE_FILE = os.path.join(_CACHE_DIR, "top_csp_cache.json")
+_TOP_CSP_CACHE_SECONDS = 3600  # 1 hour
 
-""" WATCHLIST = [
-    "SPY",
-    "QQQ",
-    "NVDA",
-    "MSFT",
-    "META",
-    "GOOGL",
-    "AMZN",
-    "AAPL",
-    "AVGO",
-    "TSM",
-    "AMD",
-    "PLTR",
-    "JPM",
-    "COST",
-    "V"
-] """
+options_engine = get_shared_engine()
 
 WATCHLIST = [
     "SPY",
     "QQQ",
-    
 ]
 
 
+def _load_top_csp_cache():
+    try:
+        if not os.path.exists(_TOP_CSP_CACHE_FILE):
+            return None
+        with open(_TOP_CSP_CACHE_FILE, "r") as f:
+            data = json.load(f)
+        age = time.time() - data.get("timestamp", 0)
+        if age < _TOP_CSP_CACHE_SECONDS:
+            print(f"TOP CSP CACHE HIT (age={int(age)}s)")
+            return data["opportunities"]
+        print(f"TOP CSP CACHE EXPIRED (age={int(age)}s)")
+        return None
+    except Exception as ex:
+        print("TOP CSP CACHE LOAD ERROR:", ex)
+        return None
+
+
+def _save_top_csp_cache(opportunities):
+    try:
+        with open(_TOP_CSP_CACHE_FILE, "w") as f:
+            json.dump({
+                "timestamp": time.time(),
+                "opportunities": opportunities
+            }, f)
+        print(f"TOP CSP CACHE SAVED ({len(opportunities)} opportunities)")
+    except Exception as ex:
+        print("TOP CSP CACHE SAVE ERROR:", ex)
+
+
 def get_top_csp_opportunities():
+
+    cached = _load_top_csp_cache()
+    if cached is not None:
+        return cached
 
     results = []
 
@@ -64,4 +88,8 @@ def get_top_csp_opportunities():
         reverse=True
     )
 
-    return results[:15]
+    results = results[:15]
+
+    _save_top_csp_cache(results)
+
+    return results
