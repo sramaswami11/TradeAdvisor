@@ -1,10 +1,7 @@
 import time
-from options_engine import OptionsEngine
+from options_engine import get_shared_engine
 
-# Single shared instance — both app.py and
-# top_csp.py import this, so the in-memory
-# option chain cache is shared across all calls
-options_engine = OptionsEngine()
+options_engine = get_shared_engine()
 
 """ WATCHLIST = [
     "SPY",
@@ -43,7 +40,7 @@ def get_top_csp_opportunities():
         # Skip delay on the first ticker.
         # -----------------------------------
         if idx > 0:
-            time.sleep(2)
+            time.sleep(10)
 
         try:
 

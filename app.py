@@ -4,7 +4,7 @@ import json
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, redirect, url_for, session, abort
 from trade_advisor import get_trade_recommendation
-from options_engine import OptionsEngine
+from options_engine import get_shared_engine
 
 import yfinance as yf
 import pandas as pd
@@ -30,7 +30,7 @@ from database import (
 
 from top_csp import get_top_csp_opportunities
 
-options_engine = OptionsEngine()
+options_engine = get_shared_engine()
 
 app = Flask(__name__)
 
@@ -381,6 +381,8 @@ def logout():
 
 @app.route("/debug-options")
 def debug_options():
+    if "user_id" not in session:
+        return {"error": "unauthorized"}, 401
 
     import yfinance as yf
 
@@ -406,6 +408,8 @@ def debug_options():
 
 @app.route("/debug-history")
 def debug_history():
+    if "user_id" not in session:
+        return {"error": "unauthorized"}, 401
 
     import yfinance as yf
 

@@ -96,12 +96,17 @@ class OptionsEngine:
 
                 except Exception as ex:
 
+                    msg = str(ex).lower()
+                    wait = (
+                        15 * (2 ** attempt)
+                        if ("429" in msg or "too many" in msg)
+                        else 3 * (2 ** attempt)
+                    )
                     print(
                         f"HISTORY ATTEMPT {attempt + 1} FAILED:",
                         ex
                     )
-
-                    time.sleep(3)
+                    time.sleep(wait)
 
             if hist is None or hist.empty:
                 print(f"{symbol}: unable to fetch history")
@@ -176,7 +181,10 @@ class OptionsEngine:
                 f"EXPIRATIONS"
             )
 
-            for expiry, dte in valid_expirations:
+            for i, (expiry, dte) in enumerate(valid_expirations):
+
+                if i > 0:
+                    time.sleep(1)
 
                 print(
                     f"\nCHECKING EXPIRY "
@@ -365,13 +373,18 @@ class OptionsEngine:
 
             except Exception as ex:
 
+                msg = str(ex).lower()
+                wait = (
+                    15 * (2 ** attempt)
+                    if ("429" in msg or "too many" in msg)
+                    else 3 * (2 ** attempt)
+                )
                 print(
                     f"EXPIRATION ATTEMPT "
                     f"{attempt + 1} FAILED:",
                     ex
                 )
-
-                time.sleep(3)
+                time.sleep(wait)
 
         if expirations:
 
@@ -616,3 +629,13 @@ class OptionsEngine:
             return "OK"
 
         return "WEAK"
+
+
+_shared_engine = None
+
+
+def get_shared_engine():
+    global _shared_engine
+    if _shared_engine is None:
+        _shared_engine = OptionsEngine()
+    return _shared_engine
