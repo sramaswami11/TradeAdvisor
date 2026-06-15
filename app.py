@@ -429,6 +429,7 @@ def debug_history():
             "error": str(ex)
         }
 
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run()
