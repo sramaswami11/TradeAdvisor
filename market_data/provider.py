@@ -1,20 +1,54 @@
 # market_data/provider.py
+import json
 import logging
-from functools import lru_cache
 import os
+import time
 
 import pandas as pd
 import requests
 
 logger = logging.getLogger(__name__)
 
-EOD_API_KEY = os.getenv("EODHD_API_KEY")  
+EOD_API_KEY = os.getenv("EODHD_API_KEY")
 if not EOD_API_KEY:
     raise RuntimeError("EODHD_API_KEY environment variable not set")
 
-
-
 BASE_URL = "https://eodhd.com/api/eod"
+
+_CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
+_SNAPSHOT_CACHE_TTL = 4 * 3600  # 4 hours — EOD data changes once per day
+
+
+def _snapshot_cache_path(symbol: str) -> str:
+    return os.path.join(_CACHE_DIR, f"snapshot_cache_{symbol}.json")
+
+
+def _load_snapshot_cache(symbol: str):
+    try:
+        path = _snapshot_cache_path(symbol)
+        if not os.path.exists(path):
+            return None
+        with open(path, "r") as f:
+            data = json.load(f)
+        age = time.time() - data.get("timestamp", 0)
+        if age < _SNAPSHOT_CACHE_TTL:
+            logger.warning(f"{symbol}: snapshot cache hit (age={int(age)}s)")
+            return data["snapshot"]
+        logger.warning(f"{symbol}: snapshot cache expired (age={int(age)}s)")
+        return None
+    except Exception as ex:
+        logger.error(f"{symbol}: snapshot cache load error: {ex}")
+        return None
+
+
+def _save_snapshot_cache(symbol: str, snapshot: dict):
+    try:
+        path = _snapshot_cache_path(symbol)
+        with open(path, "w") as f:
+            json.dump({"timestamp": time.time(), "snapshot": snapshot}, f)
+        logger.warning(f"{symbol}: snapshot cache saved")
+    except Exception as ex:
+        logger.error(f"{symbol}: snapshot cache save error: {ex}")
 
 
 def calculate_rsi(series: pd.Series, period: int = 14) -> float | None:
@@ -40,8 +74,11 @@ def safe_float(value):
         return None
 
 
-@lru_cache(maxsize=256)
 def fetch_snapshot(symbol: str) -> dict:
+    cached = _load_snapshot_cache(symbol)
+    if cached is not None:
+        return cached
+
     try:
         logger.warning(f"{symbol}: fetching fresh market data")
 
@@ -88,33 +125,25 @@ def fetch_snapshot(symbol: str) -> dict:
             f"VOL={snapshot['volume']}"
         )
 
+        _save_snapshot_cache(symbol, snapshot)
         return snapshot
 
-    except requests.exceptions.Timeout as e:
-        # More specific timeout error message
-        logger.error(f"{symbol}: Request timed out after 30 seconds - try again later")
-        
-        return {
-            "symbol": symbol,
-            "current_price": None,
-            "dma_50": None,
-            "dma_200": None,
-            "rsi_14": None,
-            "volume": None,
-            "52w_high": None,
-            "52w_low": None,
-        }
-    
+    except requests.exceptions.Timeout:
+        logger.error(f"{symbol}: request timed out after 30 seconds")
+        stale = _load_snapshot_cache(symbol)
+        if stale is not None:
+            logger.warning(f"{symbol}: serving stale snapshot after timeout")
+            return stale
+        return {"symbol": symbol, "current_price": None, "dma_50": None,
+                "dma_200": None, "rsi_14": None, "volume": None,
+                "52w_high": None, "52w_low": None}
+
     except Exception as e:
         logger.error(f"{symbol}: fetch failed → {e}")
-
-        return {
-            "symbol": symbol,
-            "current_price": None,
-            "dma_50": None,
-            "dma_200": None,
-            "rsi_14": None,
-            "volume": None,
-            "52w_high": None,
-            "52w_low": None,
-        }
+        stale = _load_snapshot_cache(symbol)
+        if stale is not None:
+            logger.warning(f"{symbol}: serving stale snapshot after error")
+            return stale
+        return {"symbol": symbol, "current_price": None, "dma_50": None,
+                "dma_200": None, "rsi_14": None, "volume": None,
+                "52w_high": None, "52w_low": None}
