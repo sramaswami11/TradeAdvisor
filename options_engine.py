@@ -98,7 +98,7 @@ class OptionsEngine:
 
                     msg = str(ex).lower()
                     wait = (
-                        15 * (2 ** attempt)
+                        5
                         if ("429" in msg or "too many" in msg)
                         else 3 * (2 ** attempt)
                     )
@@ -374,17 +374,25 @@ class OptionsEngine:
             except Exception as ex:
 
                 msg = str(ex).lower()
-                wait = (
-                    15 * (2 ** attempt)
-                    if ("429" in msg or "too many" in msg)
-                    else 3 * (2 ** attempt)
-                )
-                print(
-                    f"EXPIRATION ATTEMPT "
-                    f"{attempt + 1} FAILED:",
-                    ex
-                )
-                time.sleep(wait)
+                if "429" in msg or "too many" in msg:
+                    print(
+                        f"EXPIRATION ATTEMPT "
+                        f"{attempt + 1} FAILED: rate limited"
+                    )
+                    if symbol in cache:
+                        print(
+                            f"RATE LIMITED — returning stale "
+                            f"expirations for {symbol}"
+                        )
+                        return cache[symbol]["expirations"]
+                    time.sleep(5)
+                else:
+                    print(
+                        f"EXPIRATION ATTEMPT "
+                        f"{attempt + 1} FAILED:",
+                        ex
+                    )
+                    time.sleep(3 * (2 ** attempt))
 
         if expirations:
 
