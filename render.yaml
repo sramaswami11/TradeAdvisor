@@ -4,4 +4,11 @@ services:
     env: python
     pythonVersion: 3.11.8
     buildCommand: pip install -r requirements.txt
-    startCommand: python app.py
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: EODHD_API_KEY
+        sync: false
+      - key: ADMIN_EMAIL
+        sync: false
