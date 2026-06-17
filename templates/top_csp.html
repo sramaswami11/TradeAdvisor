@@ -34,6 +34,12 @@
         <td>{{ opp.score }}</td>
         <td>{{ opp.recommendation }}</td>
     </tr>
+    {% else %}
+    <tr>
+        <td colspan="10" style="text-align:center; padding:12px; color:#666;">
+            Scan in progress — check back in a minute.
+        </td>
+    </tr>
     {% endfor %}
 
 </table>
