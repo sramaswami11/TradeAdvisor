@@ -19,7 +19,7 @@ WATCHLIST = [
 ]
 
 
-def _load_top_csp_cache():
+def _load_top_csp_cache(allow_stale=False):
     try:
         if not os.path.exists(_TOP_CSP_CACHE_FILE):
             return None
@@ -28,6 +28,9 @@ def _load_top_csp_cache():
         age = time.time() - data.get("timestamp", 0)
         if age < _TOP_CSP_CACHE_SECONDS:
             print(f"TOP CSP CACHE HIT (age={int(age)}s)")
+            return data["opportunities"]
+        if allow_stale and data.get("opportunities"):
+            print(f"TOP CSP STALE CACHE (age={int(age)}s) — serving due to failed refresh")
             return data["opportunities"]
         print(f"TOP CSP CACHE EXPIRED (age={int(age)}s)")
         return None
@@ -56,15 +59,7 @@ def get_top_csp_opportunities():
 
     results = []
 
-    for idx, symbol in enumerate(WATCHLIST):
-
-        # -----------------------------------
-        # Stagger requests to avoid Yahoo
-        # rate-limiting on Render's shared IPs.
-        # Skip delay on the first ticker.
-        # -----------------------------------
-        if idx > 0:
-            time.sleep(10)
+    for symbol in WATCHLIST:
 
         try:
 
@@ -90,6 +85,13 @@ def get_top_csp_opportunities():
 
     results = results[:15]
 
-    _save_top_csp_cache(results)
+    if results:
+        _save_top_csp_cache(results)
+        return results
 
-    return results
+    # Fresh scan yielded nothing (rate limited) — serve stale cache
+    stale = _load_top_csp_cache(allow_stale=True)
+    if stale:
+        return stale
+
+    return []
