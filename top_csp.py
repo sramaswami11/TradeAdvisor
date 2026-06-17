@@ -2,6 +2,7 @@ import json
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from options_engine import get_shared_engine
 
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
@@ -11,9 +12,11 @@ _TOP_CSP_CACHE_SECONDS = 3600  # 1 hour
 options_engine = get_shared_engine()
 
 WATCHLIST = [
-    "SPY",
-    "QQQ",
+    "HOOD", "SOFI", "GDX", "DAL", "IBKR", "SPY", "NVDA", "XLE"
 ]
+
+# Cap concurrent Yahoo Finance calls to avoid rate limiting
+_SCAN_WORKERS = 3
 
 _bg_thread = None
 _thread_lock = threading.Lock()
@@ -51,16 +54,23 @@ def _save_top_csp_cache(opportunities):
         print("TOP CSP CACHE SAVE ERROR:", ex)
 
 
+def _scan_symbol(symbol):
+    try:
+        opps = options_engine.find_csp_opportunities(symbol)
+        print(f"TOP CSP SCAN {symbol}: {len(opps)} opportunities")
+        return opps[:3] if opps else []
+    except Exception as ex:
+        print(f"TOP CSP SCAN ERROR {symbol}: {ex}")
+        return []
+
+
 def _do_scan():
     results = []
-    for symbol in WATCHLIST:
-        try:
-            opportunities = options_engine.find_csp_opportunities(symbol)
-            print(f"TOP CSP SCAN {symbol}: {len(opportunities)} opportunities")
-            if opportunities:
-                results.extend(opportunities[:3])
-        except Exception as ex:
-            print(f"TOP CSP SCAN ERROR {symbol}: {ex}")
+
+    with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as executor:
+        futures = {executor.submit(_scan_symbol, sym): sym for sym in WATCHLIST}
+        for future in as_completed(futures):
+            results.extend(future.result())
 
     results.sort(key=lambda x: x["score"], reverse=True)
     results = results[:15]
