@@ -1,3 +1,9 @@
+databases:
+  - name: tradeadvisor-db
+    databaseName: tradeadvisor
+    user: tradeadvisor
+    plan: free
+
 services:
   - type: web
     name: tradeadvisor
@@ -12,3 +18,7 @@ services:
         sync: false
       - key: ADMIN_EMAIL
         sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tradeadvisor-db
+          property: connectionString

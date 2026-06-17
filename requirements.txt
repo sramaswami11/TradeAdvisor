@@ -19,6 +19,7 @@ yfinance==0.2.66
 
 # Database
 # SQLite3 is included with Python, no separate install needed
+psycopg2-binary==2.9.9
 
 # Development & Testing
 #pytest==7.4.3
