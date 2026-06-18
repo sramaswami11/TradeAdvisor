@@ -13,6 +13,7 @@ import time
 import traceback
 
 import pandas as pd
+import requests
 import yfinance as yf
 
 from datetime import datetime
@@ -69,7 +70,9 @@ class OptionsEngine:
 
         try:
 
-            ticker = yf.Ticker(symbol)
+            session = requests.Session()
+            session.headers.update(self.YAHOO_HEADERS)
+            ticker = yf.Ticker(symbol, session=session)
 
             # -----------------------------------
             # Fetch 1y history once (covers both
@@ -385,7 +388,9 @@ class OptionsEngine:
                             f"expirations for {symbol}"
                         )
                         return cache[symbol]["expirations"]
-                    time.sleep(5)
+                    # escalating back-off: 10s, 30s, 60s
+                    wait = [10, 30, 60][min(attempt, 2)]
+                    time.sleep(wait)
                 else:
                     print(
                         f"EXPIRATION ATTEMPT "
