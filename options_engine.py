@@ -13,7 +13,6 @@ import time
 import traceback
 
 import pandas as pd
-import requests
 import yfinance as yf
 
 from datetime import datetime
@@ -52,14 +51,6 @@ class OptionsEngine:
     # User-Agent header: prevents Yahoo blocking
     # cloud datacenter IPs (Render, Heroku, etc.)
     # ------------------------------------------
-    YAHOO_HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        )
-    }
-
     def __init__(self):
         # Instance-level cache prevents shared
         # state corruption across workers
@@ -71,9 +62,7 @@ class OptionsEngine:
 
         try:
 
-            session = requests.Session()
-            session.headers.update(self.YAHOO_HEADERS)
-            ticker = yf.Ticker(symbol, session=session)
+            ticker = yf.Ticker(symbol)
 
             # -----------------------------------
             # Fetch 1y history once (covers both
