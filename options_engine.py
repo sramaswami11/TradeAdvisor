@@ -9,6 +9,7 @@ Uses:
 
 import json
 import os
+import threading
 import time
 import traceback
 
@@ -27,12 +28,13 @@ from market_data.provider import calculate_rsi
 # ------------------------------------
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 
+# Limit to 1 concurrent yfinance call across background thread + web requests
+# to stay within Render free tier memory (512MB).
+_yf_semaphore = threading.Semaphore(1)
+
 
 class OptionsEngine:
 
-    # -----------------------------------
-    # Cache file goes in /tmp on Render
-    # -----------------------------------
     EXPIRATION_CACHE_FILE = os.path.join(
         _CACHE_DIR,
         "expiration_cache.json"
@@ -40,26 +42,18 @@ class OptionsEngine:
 
     EXPIRATION_CACHE_SECONDS = 86400  # 24 hours
 
-    # OPTION_CHAIN_CACHE is now an instance
-    # variable (not class-level) to avoid
-    # shared state across workers/requests
     OPTION_CHAIN_CACHE_SECONDS = 1800
 
     MAX_EXPIRATIONS_TO_SCAN = 5
 
-    # ------------------------------------------
-    # User-Agent header: prevents Yahoo blocking
-    # cloud datacenter IPs (Render, Heroku, etc.)
-    # ------------------------------------------
     def __init__(self):
-        # Instance-level cache prevents shared
-        # state corruption across workers
         self._option_chain_cache = {}
 
     def find_csp_opportunities(self, symbol, max_dte=45):
 
         print(f"=== CSP SCAN START: {symbol} ===")
 
+        _yf_semaphore.acquire()
         try:
 
             ticker = yf.Ticker(symbol)
@@ -323,7 +317,9 @@ class OptionsEngine:
 
             return []
 
-   
+        finally:
+            _yf_semaphore.release()
+
     # -----------------------------------
     # Expiration Fetcher
     # -----------------------------------

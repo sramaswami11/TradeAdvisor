@@ -15,8 +15,8 @@ WATCHLIST = [
     "HOOD", "SOFI", "GDX", "DAL", "IBKR", "SPY", "NVDA", "XLE"
 ]
 
-# Cap concurrent Yahoo Finance calls to avoid rate limiting
-_SCAN_WORKERS = 3
+# Serialized to stay within Render free tier memory (512MB)
+_SCAN_WORKERS = 1
 
 _bg_thread = None
 _thread_lock = threading.Lock()
