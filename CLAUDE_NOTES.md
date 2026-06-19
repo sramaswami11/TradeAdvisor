@@ -1,82 +1,105 @@
 # TradeAdvisor — Session Notes
-Date: 2026-06-17
 
 ---
 
-## What We Accomplished Today
+## Session: 2026-06-18
 
-### 1. Confirmed Render Start Command Fix (DONE — from previous session)
-User confirmed the Render dashboard Start Command was updated to:
-```
-gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
-```
+### 1. Fixed Yahoo Finance Rate Limiting on Render (DONE — committed & deployed)
 
----
+**Problem:** `/csp/SPY` returned zero results. All 3 attempts to fetch option expirations
+failed with rate-limit errors. Render's datacenter IP gets blocked by Yahoo Finance
+without a browser-like User-Agent header.
 
-### 2. Migrated Database from SQLite to Render PostgreSQL (DONE — committed & deployed)
+**Root cause:** `YAHOO_HEADERS` (with browser User-Agent) was defined as a class variable
+in `OptionsEngine` but was **never applied** to the `yf.Ticker()` call. All yfinance
+HTTP requests went out with the default Python/requests User-Agent → rate limited.
 
-**Problem:** `trade_advisor.db` lived in the project folder on Render's server. Every deploy wiped it — all user accounts and watchlists were lost.
-
-**Solution:** Migrated to Render PostgreSQL (free tier).
+**Fix:**
+- Create a `requests.Session` with the User-Agent and pass it as `yf.Ticker(symbol, session=session)`
+  so every internal call (history, options, option_chain) uses the header.
+- Replaced flat 5s sleep on 429 in `_get_expirations` with escalating back-off: 10s → 30s → 60s.
+- Added `requests` explicitly to `requirements.txt`.
 
 **Files changed:**
-- `database.py` — auto-detects `DATABASE_URL` env var. If set and starts with `postgres://` or `postgresql://`, uses `psycopg2`. Otherwise falls back to SQLite for local dev. Key SQL differences handled: `SERIAL PRIMARY KEY` vs `AUTOINCREMENT`, `%s` vs `?` placeholders, `ON CONFLICT DO NOTHING` vs `INSERT OR IGNORE`.
-- `requirements.txt` — added `psycopg2-binary==2.9.9`
-- `render.yaml` — added `databases:` block (free-tier Render PostgreSQL) with `DATABASE_URL` wired into the web service via `fromDatabase`
+- `options_engine.py` — session creation + escalating 429 back-off
+- `requirements.txt` — added `requests`
 
-**Caveat:** The `databases:` block in render.yaml only auto-provisions for Blueprint-deployed services. Since this service was created manually via dashboard, the PostgreSQL database had to be created manually in the Render dashboard and `DATABASE_URL` set in the Environment tab.
-
-**Crash fix:** Added URL format validation — `_POSTGRES` only activates if `DATABASE_URL` starts with `postgres://` or `postgresql://`. Prevents crash when Render sets a malformed/empty `DATABASE_URL` before the DB is provisioned.
+**Commit:** `5e955c7`
 
 ---
 
-### 3. Moved `/top-csp` Scan Off the Request Path (DONE — committed & deployed)
+### 2. NVDIA Typo Identified (pending manual fix)
 
-**Problem:** The CSP scan ran synchronously inside a gunicorn worker, blocking for ~40s on cold cache. With only 2 symbols, this was barely tolerable; with 8 it would be fatal.
+**Problem:** Watchlist contains `NVDIA` instead of `NVDA`. EODHD returns 404 for
+`NVDIA.US`. Dashboard shows "Invalid or missing price data" for that row.
 
-**Solution:** Background daemon thread. `get_top_csp_opportunities()` now always returns from cache instantly. The thread starts on first request (avoids gunicorn pre-fork issue), scans immediately, then sleeps for 1 hour and repeats.
+**Fix:** Log into the live app, remove `NVDIA`, re-add `NVDA` from the dashboard.
+(Data lives in Render PostgreSQL — no code change needed.)
 
-**Cold start behavior:** Returns `[]` with a "Scan in progress — check back in a minute" message in the template instead of blocking.
-
-**Files changed:**
-- `top_csp.py` — extracted `_do_scan()`, added `_background_refresh_loop()` and `_ensure_bg_thread()`
-- `templates/top_csp.html` — added `{% else %}` clause to `{% for %}` loop with "Scan in progress" message
+**Status:** Not yet fixed — user will do this when testing tomorrow.
 
 ---
 
-### 4. Expanded Watchlist + Parallelized Scan (DONE — committed & deployed)
+## Full Issue Backlog (Priority Order)
 
-**WATCHLIST** updated from `["SPY", "QQQ"]` to:
-```python
-["HOOD", "SOFI", "GDX", "DAL", "IBKR", "SPY", "NVDA", "XLE"]
-```
+### P1 — Bugs (not yet fixed)
 
-**Performance:** Used `ThreadPoolExecutor(max_workers=3)` to scan 3 symbols concurrently. I/O-bound Yahoo Finance calls benefit from threading (GIL released during network I/O). Worker count capped at 3 to avoid Yahoo Finance 429 rate limits. Scan time stays comparable to the old 2-symbol sequential scan.
+**A. `remove_ticker` has no auth guard** (`app.py:291-292`)
+All other protected routes check `if "user_id" not in session` before proceeding.
+`remove_ticker` hits `session["user_id"]` directly — unauthenticated request → 500 KeyError.
 
----
+**B. RSI hardcoded to 50 in CSP scanner** (`options_engine.py` — `_build_indicator_data_from_hist`)
+`rsi = 50` is a hardcoded placeholder — RSI is never computed in the CSP path.
+Always evaluates to "neutral"; BUY signals (require oversold) can never fire.
+The **dashboard** path (`fetch_snapshot` via EODHD) computes real RSI correctly — only the CSP scanner is affected.
+Fix: compute RSI from the `hist` DataFrame already in hand (same pandas formula as `market_data/provider.py`).
 
-## Remaining Issues (Priority Order)
+### P2 — Dead Code
 
-### Priority 3 — Low: Duplicate database files (local only)
-`trade_advisor.db` and `tradeadvisor.db` both exist locally. `trade_advisor.db` is what the code uses. `tradeadvisor.db` (65KB, Jan 26) is old/dead. Both are gitignored. Can be deleted anytime — irrelevant now that we're on PostgreSQL in production.
+**C. `_build_indicator_data()` method** (`options_engine.py:553-573`)
+Kept "as alias for old callers" but no callers exist. Makes a redundant second Yahoo call.
 
-### Priority 5 — Low: `/tmp` caches lost on restart
-`expiration_cache.json`, `top_csp_cache.json`, and `snapshot_cache_*.json` live in `/tmp`. Render wipes `/tmp` on full redeploy. After a deploy:
-- `top_csp` warms automatically via background thread (~40–60s for 8 symbols with 3 workers)
-- `expiration_cache` and `snapshot_cache` warm on first real user request
+**D. `ensure_name_column()`** (`database.py:70-87`)
+Migration helper from when `name` column was added. Never called. Dead code.
 
-Option if this becomes annoying: store caches in the PostgreSQL `cache` table with `(key, value, timestamp)`.
+### P3 — File Cleanup
+
+**E. Delete `tradeadvisor.db`** — old 65KB SQLite file from Jan 26, locally only, gitignored.
+
+**F. Delete `app.py.bak`** — old backup from Jan 15.
+
+### P4 — Operational Improvement
+
+**G. Cache persistence in PostgreSQL**
+`/tmp` caches (`expiration_cache.json`, `top_csp_cache.json`, `snapshot_cache_*.json`)
+are wiped on Render redeploy. Warm-up takes ~60s after each deploy.
+Option: add `cache(key TEXT, value TEXT, timestamp FLOAT)` table to PostgreSQL.
+Background thread still fills; caches survive deploys.
+
+### P5 — Low Noise
+
+**H. Debug prints** — `app.py`, `options_engine.py`, `top_csp.py` spam logs in prod.
+
+**I. Debug routes** — `/debug-options` and `/debug-history` are exposed in prod
+(login-gated, low risk, but should be removed).
 
 ---
 
 ## Key Files
+- `app.py` — Flask routes
 - `database.py` — SQLite/PostgreSQL dual-backend, controlled by `DATABASE_URL`
-- `requirements.txt` — added `psycopg2-binary==2.9.9`
-- `render.yaml` — Render PostgreSQL database + `DATABASE_URL` wiring
+- `options_engine.py` — CSP scanner (yfinance, scoring, caching)
 - `top_csp.py` — background refresh thread + ThreadPoolExecutor scan
+- `market_data/provider.py` — EODHD market data fetch + RSI calculation
+- `trade_advisor.py` — StrategyEngine (200/50 DMA, RSI, 52w positioning)
+- `requirements.txt` — added `psycopg2-binary`, `requests`
+- `render.yaml` — Render PostgreSQL + `DATABASE_URL` wiring
 - `templates/top_csp.html` — "Scan in progress" cold-start message
 
 ## Commits This Session
+- `5e955c7` — Fix Yahoo Finance rate limiting: apply User-Agent session to yf.Ticker, escalate 429 back-off
+
+## Commits Previous Session (2026-06-17)
 - `a9709ae` — Migrate database layer to support Render PostgreSQL
 - `54f13d5` — Move top-csp scan off request path into background thread
 - `ce108f9` — Validate DATABASE_URL format before using psycopg2
