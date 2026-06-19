@@ -19,6 +19,7 @@ import yfinance as yf
 from datetime import datetime
 
 from trade_advisor import StrategyEngine
+from market_data.provider import calculate_rsi
 
 
 # ------------------------------------
@@ -540,7 +541,7 @@ class OptionsEngine:
         low_52w = hist["Close"].min()
         high_52w = hist["Close"].max()
 
-        rsi = 50
+        rsi = calculate_rsi(hist["Close"])
 
         return {
             "current_price": price,

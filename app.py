@@ -289,6 +289,8 @@ def view_csp(symbol):
 
 @app.route("/remove/<symbol>")
 def remove_ticker(symbol):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
     remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
     return redirect(url_for("dashboard"))
 
