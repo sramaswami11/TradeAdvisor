@@ -138,6 +138,7 @@ class OptionsEngine:
             # -----------------------------------
             # Fetch expirations
             # -----------------------------------
+            time.sleep(2)  # space out burst calls after history fetch
             expirations = self._get_expirations(
                 ticker,
                 symbol
@@ -378,8 +379,8 @@ class OptionsEngine:
                             f"expirations for {symbol}"
                         )
                         return cache[symbol]["expirations"]
-                    # escalating back-off: 10s, 30s, 60s
-                    wait = [10, 30, 60][min(attempt, 2)]
+                    # escalating back-off: 5s, 10s, 20s
+                    wait = [5, 10, 20][min(attempt, 2)]
                     time.sleep(wait)
                 else:
                     print(
