@@ -65,15 +65,26 @@ def _scan_symbol(symbol):
 
 
 def _do_scan():
-    results = []
+    per_symbol = {}
 
     with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as executor:
         futures = {executor.submit(_scan_symbol, sym): sym for sym in WATCHLIST}
         for future in as_completed(futures):
-            results.extend(future.result())
+            sym = futures[future]
+            result = future.result()
+            if result:
+                per_symbol[sym] = result
 
+    # Guarantee one slot per symbol so low-IV tickers (e.g. SPY) aren't
+    # crowded out by high-IV names. Fill remaining slots by score.
+    guaranteed = [opps[0] for opps in per_symbol.values()]
+    overflow = sorted(
+        [opp for opps in per_symbol.values() for opp in opps[1:]],
+        key=lambda x: x["score"],
+        reverse=True
+    )
+    results = guaranteed + overflow
     results.sort(key=lambda x: x["score"], reverse=True)
-    results = results[:15]
 
     if results:
         _save_top_csp_cache(results)

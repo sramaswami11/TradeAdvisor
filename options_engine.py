@@ -49,7 +49,7 @@ class OptionsEngine:
     def __init__(self):
         self._option_chain_cache = {}
 
-    def find_csp_opportunities(self, symbol, max_dte=45):
+    def find_csp_opportunities(self, symbol, max_dte=14):
 
         print(f"=== CSP SCAN START: {symbol} ===")
 
@@ -240,11 +240,12 @@ class OptionsEngine:
                         distance_pct = (strike - price) / price
 
                         # -----------------------------------
-                        # 2%–18% OTM window
+                        # ATM to 10% OTM window
+                        # (exclude ITM puts; allow ATM and OTM)
                         # -----------------------------------
                         if (
-                            distance_pct > -0.02
-                            or distance_pct < -0.18
+                            distance_pct > 0
+                            or distance_pct < -0.10
                         ):
                             continue
 
