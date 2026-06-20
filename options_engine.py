@@ -110,6 +110,7 @@ class OptionsEngine:
                 hist,
                 price
             )
+            del hist  # free 1y of OHLCV data before options fetch
 
             print("INDICATOR DATA:", data)
 
@@ -318,6 +319,7 @@ class OptionsEngine:
             return []
 
         finally:
+            self._option_chain_cache.clear()  # free DataFrames between scans
             _yf_semaphore.release()
 
     # -----------------------------------
@@ -375,9 +377,9 @@ class OptionsEngine:
                             f"expirations for {symbol}"
                         )
                         return cache[symbol]["expirations"]
-                    # escalating back-off: 5s, 10s, 20s
-                    wait = [5, 10, 20][min(attempt, 2)]
-                    time.sleep(wait)
+                    # Don't retry 429 — retries hold memory and
+                    # worsen throttling. Fail fast.
+                    return []
                 else:
                     print(
                         f"EXPIRATION ATTEMPT "
