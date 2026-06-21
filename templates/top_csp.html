@@ -2,41 +2,71 @@
 <html>
 <head>
     <title>Top CSP Opportunities</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 40px;
+            background: #f7f9fc;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            background: white;
+        }
+
+        th, td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+            text-align: center;
+        }
+
+        th {
+            background: #f0f2f5;
+        }
+
+        .strong { color: green; font-weight: bold; }
+        .good { color: #2a7; font-weight: bold; }
+        .ok { color: orange; font-weight: bold; }
+        .weak { color: red; font-weight: bold; }
+    </style>
 </head>
 <body>
 
 <h1>Top CSP Opportunities</h1>
 
-<table border="1" cellpadding="5">
+<table>
     <tr>
         <th>Symbol</th>
-        <th>Price</th>
         <th>Strike</th>
         <th>Expiry</th>
         <th>DTE</th>
-        <th>Premium</th>
-        <th>Yield %</th>
-        <th>Distance %</th>
+        <th>Bid</th>
+        <th>Ask</th>
+        <th>Ann%</th>
+        <th>Distance%</th>
+        <th>Delta</th>
+        <th>OI</th>
         <th>Score</th>
-        <th>Rating</th>
     </tr>
 
     {% for opp in opportunities %}
     <tr>
         <td>{{ opp.symbol }}</td>
-        <td>{{ opp.price }}</td>
-        <td>{{ opp.strike }}</td>
+        <td>${{ opp.strike }}</td>
         <td>{{ opp.expiry }}</td>
         <td>{{ opp.dte }}</td>
-        <td>{{ opp.premium }}</td>
-        <td>{{ opp.yield_pct }}</td>
-        <td>{{ opp.distance_pct }}</td>
-        <td>{{ opp.score }}</td>
-        <td>{{ opp.recommendation }}</td>
+        <td>{% if opp.bid > 0 %}${{ opp.bid }}{% else %}—{% endif %}</td>
+        <td>{% if opp.ask > 0 %}${{ opp.ask }}{% else %}—{% endif %}</td>
+        <td>{{ opp.annualized }}%</td>
+        <td>{{ opp.distance_pct }}%</td>
+        <td>{% if opp.delta is not none %}{{ opp.delta }}{% else %}—{% endif %}</td>
+        <td>{{ "{:,}".format(opp.oi) }}</td>
+        <td class="{{ opp.recommendation|lower }}">{{ opp.score }} {{ opp.recommendation }}</td>
     </tr>
     {% else %}
     <tr>
-        <td colspan="10" style="text-align:center; padding:12px; color:#666;">
+        <td colspan="11" style="text-align:center; padding:12px; color:#666;">
             Scan in progress — check back in a minute.
         </td>
     </tr>

@@ -8,6 +8,7 @@ Uses:
 """
 
 import json
+import math
 import os
 import threading
 import time
@@ -210,10 +211,14 @@ class OptionsEngine:
                         bid = row.get("bid", 0)
                         ask = row.get("ask", 0)
                         last = row.get("lastPrice", 0)
+                        oi = row.get("openInterest", 0)
+                        iv = row.get("impliedVolatility", 0)
 
                         bid = 0 if pd.isna(bid) else float(bid)
                         ask = 0 if pd.isna(ask) else float(ask)
                         last = 0 if pd.isna(last) else float(last)
+                        oi = 0 if pd.isna(oi) else int(oi)
+                        iv = 0.0 if pd.isna(iv) else float(iv)
 
                         # -----------------------------------
                         # Premium calculation
@@ -265,6 +270,11 @@ class OptionsEngine:
                             yield_pct * (365 / max(dte, 1))
                         )
 
+                        delta = self._put_delta(price, strike, dte, iv)
+
+                        if delta is None or not (-0.30 <= delta <= -0.25):
+                            continue
+
                         score = self._score_csp(
                             signals,
                             yield_pct,
@@ -274,19 +284,17 @@ class OptionsEngine:
 
                         opportunities.append({
                             "symbol": symbol,
-                            "strategy": "CSP",
-                            "price": round(price, 2),
                             "strike": round(strike, 2),
                             "expiry": expiry,
                             "dte": dte,
-                            "premium": round(premium, 2),
-                            "yield_pct": round(yield_pct * 100, 2),
+                            "bid": round(bid, 2),
+                            "ask": round(ask, 2),
                             "annualized": round(annualized * 100, 2),
-                            "distance_pct": round(
-                                distance_pct * 100, 2
-                            ),
+                            "distance_pct": round(distance_pct * 100, 2),
+                            "delta": delta,
+                            "oi": oi,
                             "score": score,
-                            "recommendation": self._label(score)
+                            "recommendation": self._label(score),
                         })
 
                     except Exception as e:
@@ -616,6 +624,16 @@ class OptionsEngine:
             score += 1
 
         return score
+
+    # -----------------------------------
+    # Greeks
+    # -----------------------------------
+    def _put_delta(self, price, strike, dte, iv):
+        T = dte / 365.0
+        if T <= 0 or iv <= 0 or price <= 0 or strike <= 0:
+            return None
+        d1 = (math.log(price / strike) + (0.05 + 0.5 * iv ** 2) * T) / (iv * math.sqrt(T))
+        return round(0.5 * math.erfc(-d1 / math.sqrt(2)) - 1, 2)
 
     # -----------------------------------
     # Labels
