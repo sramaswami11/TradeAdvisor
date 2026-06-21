@@ -63,6 +63,14 @@ def init_db():
             )
         """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS cache (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            timestamp FLOAT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -173,3 +181,49 @@ def update_user_name_if_missing(user_id: int, name: str):
     )
     conn.commit()
     conn.close()
+
+
+# =========================
+# Cache
+# =========================
+def get_cache(key: str):
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute(
+            f"SELECT value, timestamp FROM cache WHERE key = {_P}",
+            (key,)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row:
+            return {"value": row[0], "timestamp": row[1]}
+        return None
+    except Exception as ex:
+        print(f"DB CACHE GET ERROR ({key}):", ex)
+        return None
+
+
+def set_cache(key: str, value: str, timestamp: float):
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        if _POSTGRES:
+            c.execute(
+                f"""
+                INSERT INTO cache (key, value, timestamp)
+                VALUES ({_P}, {_P}, {_P})
+                ON CONFLICT (key) DO UPDATE
+                SET value = EXCLUDED.value, timestamp = EXCLUDED.timestamp
+                """,
+                (key, value, timestamp)
+            )
+        else:
+            c.execute(
+                f"INSERT OR REPLACE INTO cache (key, value, timestamp) VALUES ({_P}, {_P}, {_P})",
+                (key, value, timestamp)
+            )
+        conn.commit()
+        conn.close()
+    except Exception as ex:
+        print(f"DB CACHE SET ERROR ({key}):", ex)

@@ -4,6 +4,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from options_engine import get_shared_engine
+from database import get_cache, set_cache
 
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 _TOP_CSP_CACHE_FILE = os.path.join(_CACHE_DIR, "top_csp_cache.json")
@@ -23,35 +24,54 @@ _thread_lock = threading.Lock()
 
 
 def _load_top_csp_cache(allow_stale=False):
+    # Try file first (fast path)
     try:
-        if not os.path.exists(_TOP_CSP_CACHE_FILE):
-            return None
-        with open(_TOP_CSP_CACHE_FILE, "r") as f:
-            data = json.load(f)
-        age = time.time() - data.get("timestamp", 0)
-        if age < _TOP_CSP_CACHE_SECONDS:
-            print(f"TOP CSP CACHE HIT (age={int(age)}s)")
-            return data["opportunities"]
-        if allow_stale and data.get("opportunities"):
-            print(f"TOP CSP STALE CACHE (age={int(age)}s)")
-            return data["opportunities"]
-        print(f"TOP CSP CACHE EXPIRED (age={int(age)}s)")
-        return None
+        if os.path.exists(_TOP_CSP_CACHE_FILE):
+            with open(_TOP_CSP_CACHE_FILE, "r") as f:
+                data = json.load(f)
+            age = time.time() - data.get("timestamp", 0)
+            if age < _TOP_CSP_CACHE_SECONDS:
+                print(f"TOP CSP CACHE HIT (age={int(age)}s)")
+                return data["opportunities"]
+            if allow_stale and data.get("opportunities"):
+                print(f"TOP CSP STALE CACHE (age={int(age)}s)")
+                return data["opportunities"]
+            print(f"TOP CSP CACHE EXPIRED (age={int(age)}s)")
     except Exception as ex:
         print("TOP CSP CACHE LOAD ERROR:", ex)
-        return None
+
+    # File missing or expired — fall back to DB
+    try:
+        row = get_cache("top_csp_cache")
+        if row:
+            age = time.time() - row["timestamp"]
+            opps = json.loads(row["value"])
+            if age < _TOP_CSP_CACHE_SECONDS:
+                print(f"TOP CSP DB CACHE HIT (age={int(age)}s)")
+                return opps
+            if allow_stale and opps:
+                print(f"TOP CSP DB STALE CACHE (age={int(age)}s)")
+                return opps
+    except Exception as ex:
+        print("TOP CSP DB CACHE LOAD ERROR:", ex)
+
+    return None
 
 
 def _save_top_csp_cache(opportunities):
+    ts = time.time()
+    data = {"timestamp": ts, "opportunities": opportunities}
     try:
         with open(_TOP_CSP_CACHE_FILE, "w") as f:
-            json.dump({
-                "timestamp": time.time(),
-                "opportunities": opportunities
-            }, f)
+            json.dump(data, f)
         print(f"TOP CSP CACHE SAVED ({len(opportunities)} opportunities)")
     except Exception as ex:
         print("TOP CSP CACHE SAVE ERROR:", ex)
+
+    try:
+        set_cache("top_csp_cache", json.dumps(opportunities), ts)
+    except Exception as ex:
+        print("TOP CSP DB CACHE SAVE ERROR:", ex)
 
 
 def _scan_symbol(symbol):

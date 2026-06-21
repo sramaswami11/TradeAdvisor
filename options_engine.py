@@ -21,6 +21,7 @@ from datetime import datetime
 
 from trade_advisor import StrategyEngine
 from market_data.provider import calculate_rsi
+from database import get_cache, set_cache
 
 
 # ------------------------------------
@@ -431,20 +432,23 @@ class OptionsEngine:
 
         try:
 
-            if not os.path.exists(
-                self.EXPIRATION_CACHE_FILE
-            ):
-                return {}
-
-            with open(
-                self.EXPIRATION_CACHE_FILE, "r"
-            ) as f:
-                return json.load(f)
+            if os.path.exists(self.EXPIRATION_CACHE_FILE):
+                with open(self.EXPIRATION_CACHE_FILE, "r") as f:
+                    return json.load(f)
 
         except Exception as ex:
-
             print("CACHE LOAD ERROR:", ex)
-            return {}
+
+        # File missing (e.g. after Render redeploy) — fall back to DB
+        try:
+            row = get_cache("expiration_cache")
+            if row:
+                print("EXPIRATION CACHE: loaded from DB")
+                return json.loads(row["value"])
+        except Exception as ex:
+            print("EXPIRATION CACHE DB LOAD ERROR:", ex)
+
+        return {}
 
     # -----------------------------------
     # Save expiration cache
@@ -452,14 +456,15 @@ class OptionsEngine:
     def _save_expiration_cache(self, cache):
 
         try:
-
-            with open(
-                self.EXPIRATION_CACHE_FILE, "w"
-            ) as f:
+            with open(self.EXPIRATION_CACHE_FILE, "w") as f:
                 json.dump(cache, f)
-
         except Exception as ex:
             print("CACHE SAVE ERROR:", ex)
+
+        try:
+            set_cache("expiration_cache", json.dumps(cache), time.time())
+        except Exception as ex:
+            print("EXPIRATION CACHE DB SAVE ERROR:", ex)
 
     # -----------------------------------
     # Cached option chain fetch
