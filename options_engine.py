@@ -550,31 +550,6 @@ class OptionsEngine:
         }
 
     # -----------------------------------
-    # Keep old name as alias for any
-    # callers that used _build_indicator_data
-    # -----------------------------------
-    def _build_indicator_data(self, ticker, price):
-
-        hist = None
-
-        for attempt in range(3):
-
-            try:
-
-                hist = ticker.history(period="1y")
-
-                if hist is not None and not hist.empty:
-                    break
-
-            except Exception as ex:
-
-                print("INDICATOR HISTORY FAILED:", ex)
-                time.sleep(3)
-
-        return self._build_indicator_data_from_hist(
-            hist, price
-        )
-
     def _days_to_expiry(self, expiry_str):
 
         expiry_date = datetime.strptime(

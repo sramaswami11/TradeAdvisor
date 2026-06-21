@@ -67,26 +67,6 @@ def init_db():
     conn.close()
 
 
-def ensure_name_column():
-    """Retroactive migration for SQLite DBs created before the name column existed."""
-    if _POSTGRES:
-        conn = get_connection()
-        c = conn.cursor()
-        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT")
-        conn.commit()
-        conn.close()
-        return
-
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute("PRAGMA table_info(users)")
-    cols = [row[1] for row in c.fetchall()]
-    if "name" not in cols:
-        c.execute("ALTER TABLE users ADD COLUMN name TEXT")
-    conn.commit()
-    conn.close()
-
-
 # =========================
 # Users
 # =========================
