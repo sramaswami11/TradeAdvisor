@@ -2,88 +2,61 @@
 
 ---
 
-## Session: 2026-06-19
+## Session: 2026-06-20
 
-### 1. Fixed `remove_ticker` Missing Auth Guard (DONE — committed)
+### 1. Fixed OOM SIGKILL on Render (options_engine.py) — DONE, committed `4280ae0`
 
-**Problem:** `remove_ticker` at `/remove/<symbol>` hit `session["user_id"]` directly with no
-`if "user_id" not in session` check. Unauthenticated request → 500 KeyError.
-Every other protected route had the guard; this one was missed.
+**Problem:** CSP scan for SPY was still OOM-killing the Render worker after the semaphore fix from the previous session. Logs showed all 3 expiration retries failing with 429 ("rate limited") and then SIGKILL immediately after.
 
-**Fix:** Added standard auth redirect before the DB call. (`app.py:291`)
+**Root causes identified:**
+- `_get_expirations` retry loop slept 5+10+20 = 35s on 429 while holding the semaphore AND the 1-year `hist` DataFrame in memory. Each failed `ticker.options` call with curl_cffi also left response buffers.
+- `_option_chain_cache` on the shared `_shared_engine` singleton was never cleared between symbol scans — option chain DataFrames from all 8 background-scanned symbols accumulated in memory.
 
-**Commit:** `17ebbe3` (bundled with P1B)
-
----
-
-### 2. Fixed RSI Hardcoded to 50 in CSP Scanner (DONE — committed)
-
-**Problem:** `_build_indicator_data_from_hist` in `options_engine.py` had `rsi = 50` as
-a placeholder. RSI was never computed in the CSP path — always "neutral", BUY signals
-(require oversold) could never fire. Dashboard path used EODHD and computed real RSI.
-
-**Fix:** Imported `calculate_rsi` from `market_data/provider.py` and replaced the hardcode
-with `calculate_rsi(hist["Close"])`. The `hist` DataFrame is already in hand so no extra call.
-
-**Commit:** `17ebbe3`
+**Fix (3 lines):**
+- `del hist` after `_build_indicator_data_from_hist`, before expiration fetch.
+- On 429 in `_get_expirations`: return stale cache immediately if available, else `return []`. No sleep, no retry.
+- `self._option_chain_cache.clear()` in the `finally` block of `find_csp_opportunities`.
 
 ---
 
-### 3. Fixed yfinance Session Incompatibility (DONE — committed)
+### 2. Tightened CSP Scan Parameters (options_engine.py) — DONE, committed `7f0800d`
 
-**Problem:** Commit `5e955c7` (previous session) passed a `requests.Session` with a
-browser User-Agent to `yf.Ticker(symbol, session=session)`. yfinance 0.2.66 upgraded
-its internals to use `curl_cffi` (Chrome impersonation built-in) and now raises
-`YFDataException` if you hand it a plain `requests.Session`.
+**Problem:** Scanner was going 18% OTM (e.g. SPY $746 → strike $658) and up to 45 DTE. Both impractical. User wanted ≤10% OTM and ≤14 DTE (2 weeks).
 
-**Fix:** Removed the session creation entirely — let yfinance handle its own session.
-Removed `requests` import and `YAHOO_HEADERS` constant from `options_engine.py` (both dead).
-`requests` stays in `requirements.txt` because `market_data/provider.py` still uses it for EODHD.
-
-**Commit:** `d1a383d`
-
----
-
-### 4. Reduced Rate-Limit Burst and Memory Pressure (DONE — committed)
-
-**Problem:** History and expirations fetch were back-to-back on the same ticker.
-Yahoo was rate-limiting the second call. Back-off was 10/30/60s — combined with
-gunicorn running 2 workers, sleeping workers held memory long enough to OOM.
+**Also:** The 2% minimum OTM floor (`distance_pct > -0.02`) was incorrectly filtering out ATM strikes. SPY $740 strike at SPY price $740 → distance_pct = 0 → filtered out before scoring. The ATM put bid/ask was $3.39/$3.44 — a perfectly valid CSP with 0.62% yield and 20.7% annualized.
 
 **Fix:**
-- Added `time.sleep(2)` between history fetch and `_get_expirations` call.
-- Tightened back-off from 10/30/60s → 5/10/20s.
-- Dropped gunicorn workers from 2 → 1 (`render.yaml`). Background ThreadPoolExecutor
-  already handles parallelism; 2 workers on 512MB Render free was redundant and risky.
-
-**Commit:** `0637178`
+- `max_dte` default: 45 → 14
+- OTM upper bound: `distance_pct > -0.02` → `distance_pct > 0` (exclude ITM puts only; allow ATM)
+- OTM lower bound: `distance_pct < -0.18` → `distance_pct < -0.10` (10% max OTM)
 
 ---
 
-### 5. Serialized yfinance Calls with Semaphore (DONE — committed)
+### 3. Fixed SPY Missing from Top-CSP Page (top_csp.py) — DONE, committed `7f0800d`
 
-**Problem:** Background `top_csp` thread was running 3 concurrent `find_csp_opportunities`
-calls (via ThreadPoolExecutor, `_SCAN_WORKERS=3`). When a user triggered `/csp/SPY`
-simultaneously, that was 4 concurrent yfinance calls + their pandas DataFrames in memory →
-OOM, gunicorn SIGKILL'd the worker consistently at the 3rd expiration retry.
+**Problem:** SPY found 373 CSP opportunities per scan but never appeared in `/top-csp`. Root cause: `_do_scan` globally sorted all results and took `[:15]`. SPY's best strikes score 7 (signals +4, yield +1, annualized +2). High-IV names like HOOD/NVDA score 10, DAL/IBKR/XLE score 8-9, and all 15 slots were consumed before SPY.
 
-**Fix:**
-- Added `threading.Semaphore(1)` as `_yf_semaphore` in `options_engine.py`.
-- `find_csp_opportunities` acquires before entering and releases in `finally` — guaranteed
-  release on any exit path (exception, early `return []`, or normal return).
-- Dropped `_SCAN_WORKERS` from 3 → 1 in `top_csp.py` to match serialized behavior.
+**Score breakdown for SPY $740 ATM, DTE=11, premium $4.61:**
+- above_200_dma (+2), above_50_dma (+1), rsi_neutral (+1) = 4
+- yield_pct 0.623% > 0.5% (+1)
+- annualized 20.7% > 10% (+1), > 20% (+1)
+- Total: 7 — competitive but loses to HOOD/NVDA/DAL
 
-**Verified working:** CSP scan for SPY completes without SIGKILL after this fix.
+**Fix:** Restructured `_do_scan` to track results per symbol. Guarantees the best result from each symbol that had opportunities, then fills remaining slots from overflow sorted by score. Removed the `[:15]` hard cap (max is now 8 symbols × 3 = 24 results).
 
-**Commit:** `ea5b599`
+**Verified working locally.** Render deploy pending test.
 
 ---
 
-### 6. NVDIA Typo (still pending — manual fix)
+## Commits This Session (2026-06-20)
+- `4280ae0` — Fail fast on 429 and clear option chain cache to prevent OOM on Render
+- `7f0800d` — Fix SPY missing from top-csp: widen strike window, cap DTE, guarantee per-symbol slot
 
-Watchlist contains `NVDIA` instead of `NVDA`. EODHD returns 404 for `NVDIA.US`.
-Fix: log into live app, remove `NVDIA`, re-add `NVDA` from the dashboard.
-Data lives in Render PostgreSQL — no code change needed.
+---
+
+## Pending for Next Session
+- Test `7f0800d` on Render (delete `/tmp/top_csp_cache.json` or wait for hourly refresh after deploy)
+- Fix NVDIA→NVDA typo in live Render PostgreSQL watchlist (log in, remove NVDIA, add NVDA)
 
 ---
 
@@ -131,13 +104,14 @@ Background thread still fills; caches survive deploys.
 - `render.yaml` — Render PostgreSQL + `DATABASE_URL` wiring, 1 gunicorn worker
 - `templates/top_csp.html` — "Scan in progress" cold-start message
 
-## Commits This Session (2026-06-19)
-- `17ebbe3` — Fix auth guard on remove_ticker and compute real RSI in CSP scanner
-- `d1a383d` — Drop manual requests.Session — yfinance now requires curl_cffi internally
-- `0637178` — Reduce memory pressure and rate-limit burst on Render free tier
+## Commits Previous Session (2026-06-19)
+- `5bd5c8f` — Update CLAUDE_NOTES with 2026-06-19 session summary
 - `ea5b599` — Serialize yfinance calls with semaphore to prevent OOM on Render free tier
+- `0637178` — Reduce memory pressure and rate-limit burst on Render free tier
+- `d1a383d` — Drop manual requests.Session — yfinance now requires curl_cffi internally
+- `17ebbe3` — Fix auth guard on remove_ticker and compute real RSI in CSP scanner
 
-## Commits Previous Session (2026-06-18)
+## Commits Session Before That (2026-06-18)
 - `5e955c7` — Fix Yahoo Finance rate limiting: apply User-Agent session to yf.Ticker, escalate 429 back-off
 
 ## Commits Session Before That (2026-06-17)
