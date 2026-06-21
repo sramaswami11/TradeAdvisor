@@ -272,7 +272,10 @@ class OptionsEngine:
 
                         delta = self._put_delta(price, strike, dte, iv)
 
-                        if delta is None or not (-0.30 <= delta <= -0.25):
+                        # Only filter on delta when IV is available to compute it.
+                        # If IV is missing, let the strike through so rate-limited
+                        # or partial chain responses don't silently drop everything.
+                        if delta is not None and not (-0.30 <= delta <= -0.25):
                             continue
 
                         score = self._score_csp(
