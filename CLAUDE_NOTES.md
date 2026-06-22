@@ -2,6 +2,143 @@
 
 ---
 
+## Session: 2026-06-21
+
+### 1. Standardized CSP Display Columns — DONE, committed `5e2eafb`
+
+**Problem:** Per-symbol CSP page and Top-CSP page had different, inconsistent columns. Per-symbol showed Strike/Expiry/DTE/Premium/Yield%/Ann%/Distance%/Score/Recommendation; Top-CSP showed Symbol/Price/Strike/Expiry/DTE/Premium/Yield%/Distance%/Score/Rating.
+
+**Fix:** Unified both views to: Symbol* / Strike / Expiry / DTE / Bid / Ask / Ann% / Distance% / Delta / OI / Score.
+- Replaced Premium with Bid + Ask separately (more actionable for execution)
+- Replaced Yield% with Ann% (apples-to-apples across different DTE)
+- Added Delta (Black-Scholes put delta via `math.erfc`, no scipy needed, uses yfinance `impliedVolatility`, risk-free rate 5%)
+- Added OI (open interest, comma-formatted)
+- Dropped Price, Strategy, standalone Recommendation — Score column now shows "9 STRONG" with color coding
+- Applied basic styling to `top_csp.html` (was completely unstyled before)
+
+**Backend changes (`options_engine.py`):**
+- Added `import math`
+- Added `_put_delta(price, strike, dte, iv)` method
+- Now captures `openInterest` and `impliedVolatility` from yfinance chain row
+
+---
+
+### 2. Added Delta Filter (0.25–0.30) — DONE, committed `5e2eafb`
+
+**Problem:** User wanted to only show CSP opportunities in the 0.25–0.30 delta range (sweet spot: ~70–75% probability of expiring worthless).
+
+**Fix:** Filter added in `options_engine.py` before scoring: `if delta is not None and not (-0.30 <= delta <= -0.25): continue`
+
+**Important:** Filter uses `delta is not None` (not `delta is None or not`) so strikes with missing IV pass through rather than being silently dropped. This prevents the scan returning 0 results when yfinance returns partial data under rate limiting.
+
+---
+
+### 3. Removed Dead Code (P2) — DONE, committed `3a5557a`
+
+- Deleted `_build_indicator_data()` alias in `options_engine.py` (no callers, made redundant Yahoo call)
+- Deleted `ensure_name_column()` in `database.py` (one-off migration helper, already applied)
+- Cleaned up dead import in `migrate_to_db.py`
+
+---
+
+### 4. Deleted Stale Files (P3) — DONE, committed `8381d30`
+
+- Deleted `app.py.bak` (manual backup from Jan 15)
+- Deleted `trade_advisor.db` (original local SQLite from Jan 26, gitignored equivalent still exists locally)
+
+---
+
+### 5. Cache Persistence to PostgreSQL (P4) — DONE, committed `af9a91d`
+
+**Problem:** `/tmp` caches (`expiration_cache.json`, `top_csp_cache.json`) are wiped on every Render redeploy, causing ~60s cold-start warm-up and returning 0 results until the background scan completes.
+
+**Fix:** Added `cache(key TEXT PRIMARY KEY, value TEXT, timestamp FLOAT)` table to PostgreSQL via `init_db()`. Added `get_cache(key)` and `set_cache(key, value, ts)` to `database.py`.
+
+- Both caches now **write-through** to PostgreSQL on every save
+- On load: file is tried first (fast path); if missing, falls back to DB
+- After any Render redeploy, stale-but-good results are immediately available from PostgreSQL while the background scan re-warms
+
+**Files changed:** `database.py`, `options_engine.py`, `top_csp.py`
+
+---
+
+### 6. Delta Filter Too Aggressive Fix — DONE, committed `518b000`
+
+**Problem:** After deploying the delta filter, Top-CSP page returned 0 results on Render. Root cause: yfinance returns `impliedVolatility=0` or NaN under rate limiting. `_put_delta` returned `None`, and the original filter `if delta is None or not (-0.30 <= delta <= -0.25)` excluded those strikes entirely.
+
+**Fix:** Changed to `if delta is not None and not (-0.30 <= delta <= -0.25): continue` — strikes with missing IV pass through (shown as `—` in UI), only computable deltas are filtered.
+
+---
+
+## Commits This Session (2026-06-21)
+- `5e2eafb` — Standardize CSP display: add delta filter, bid/ask, OI, Ann% across both views
+- `3a5557a` — Remove dead code: _build_indicator_data alias and ensure_name_column migration helper
+- `518b000` — Soften delta filter: pass through strikes when IV is missing rather than dropping them
+- `af9a91d` — P4: Persist expiration and top-csp caches to PostgreSQL to survive Render deploys
+- `8381d30` — P3: Delete stale backup and old SQLite file
+
+---
+
+## Pending for Next Session
+- **P5A** — Strip debug `print` statements from `app.py`, `options_engine.py`, `top_csp.py` (log spam in prod)
+- **P5B** — Remove `/debug-options` and `/debug-history` routes (login-gated but exposed in prod)
+- **NVDIA typo** — Persists in live Render PostgreSQL watchlist; remove via dashboard UI, don't re-run admin import with old file
+
+## Validation Checklist for Next Session
+Before starting new work, verify these on the live Render app:
+1. `/top-csp` — shows results (not empty), all deltas in -0.25 to -0.30 range (or `—` if IV missing)
+2. `/csp/SPY` — returns results after background scan has warmed the expiration cache
+3. After a fresh deploy — `/top-csp` serves stale results from PostgreSQL immediately (not "Scan in progress")
+4. Check Render logs: `EXPIRATION CACHE: loaded from DB` or `TOP CSP DB CACHE HIT` should appear after redeploy
+5. No NVDIA in dashboard watchlist
+
+---
+
+## Full Issue Backlog (Priority Order)
+
+### P5 — Low Noise
+
+**H. Debug prints** — `app.py`, `options_engine.py`, `top_csp.py` spam logs in prod.
+
+**I. Debug routes** — `/debug-options` and `/debug-history` are exposed in prod
+(login-gated, low risk, but should be removed).
+
+---
+
+## Key Files
+- `app.py` — Flask routes
+- `database.py` — SQLite/PostgreSQL dual-backend, controlled by `DATABASE_URL`; also has `get_cache`/`set_cache` for persistent caching
+- `options_engine.py` — CSP scanner (yfinance, scoring, caching, semaphore, Black-Scholes delta)
+- `top_csp.py` — background refresh thread + ThreadPoolExecutor scan
+- `market_data/provider.py` — EODHD market data fetch + RSI calculation
+- `trade_advisor.py` — StrategyEngine (200/50 DMA, RSI, 52w positioning)
+- `requirements.txt` — added `psycopg2-binary`, `requests`
+- `render.yaml` — Render PostgreSQL + `DATABASE_URL` wiring, 1 gunicorn worker
+- `templates/top_csp.html` — unified column layout with styling
+- `templates/csp_results.html` — unified column layout
+
+## Commits Previous Session (2026-06-20)
+- `4280ae0` — Fail fast on 429 and clear option chain cache to prevent OOM on Render
+- `7f0800d` — Fix SPY missing from top-csp: widen strike window, cap DTE, guarantee per-symbol slot
+
+## Commits Session Before That (2026-06-19)
+- `5bd5c8f` — Update CLAUDE_NOTES with 2026-06-19 session summary
+- `ea5b599` — Serialize yfinance calls with semaphore to prevent OOM on Render free tier
+- `0637178` — Reduce memory pressure and rate-limit burst on Render free tier
+- `d1a383d` — Drop manual requests.Session — yfinance now requires curl_cffi internally
+- `17ebbe3` — Fix auth guard on remove_ticker and compute real RSI in CSP scanner
+
+## Commits Session Before That (2026-06-18)
+- `5e955c7` — Fix Yahoo Finance rate limiting: apply User-Agent session to yf.Ticker, escalate 429 back-off
+
+## Commits Session Before That (2026-06-17)
+- `a9709ae` — Migrate database layer to support Render PostgreSQL
+- `54f13d5` — Move top-csp scan off request path into background thread
+- `ce108f9` — Validate DATABASE_URL format before using psycopg2
+- `c3f7845` — Expand watchlist to 8 symbols, parallelize scan with ThreadPoolExecutor
+
+---
+
 ## Session: 2026-06-20
 
 ### 1. Fixed OOM SIGKILL on Render (options_engine.py) — DONE, committed `4280ae0`
