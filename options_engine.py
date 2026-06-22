@@ -12,7 +12,6 @@ import math
 import os
 import threading
 import time
-import traceback
 
 import pandas as pd
 import yfinance as yf
@@ -53,8 +52,6 @@ class OptionsEngine:
 
     def find_csp_opportunities(self, symbol, max_dte=14):
 
-        print(f"=== CSP SCAN START: {symbol} ===")
-
         _yf_semaphore.acquire()
         try:
 
@@ -64,15 +61,11 @@ class OptionsEngine:
             # Fetch 1y history once (covers both
             # price and indicator needs)
             # -----------------------------------
-            print("FETCHING HISTORY...")
-
             hist = None
 
             for attempt in range(3):
 
                 try:
-
-                    print(f"HISTORY ATTEMPT {attempt + 1}")
 
                     hist = ticker.history(
                         period="1y",
@@ -80,7 +73,6 @@ class OptionsEngine:
                     )
 
                     if hist is not None and not hist.empty:
-                        print("HISTORY FETCH SUCCESS")
                         break
 
                 except Exception as ex:
@@ -91,18 +83,12 @@ class OptionsEngine:
                         if ("429" in msg or "too many" in msg)
                         else 3 * (2 ** attempt)
                     )
-                    print(
-                        f"HISTORY ATTEMPT {attempt + 1} FAILED:",
-                        ex
-                    )
                     time.sleep(wait)
 
             if hist is None or hist.empty:
-                print(f"{symbol}: unable to fetch history")
                 return []
 
             price = float(hist["Close"].iloc[-1])
-            print(f"CURRENT PRICE: {price}")
 
             # -----------------------------------
             # Build indicators from same hist
@@ -114,22 +100,16 @@ class OptionsEngine:
             )
             del hist  # free 1y of OHLCV data before options fetch
 
-            print("INDICATOR DATA:", data)
-
             if not data:
-                print("NO INDICATOR DATA")
                 return []
 
             strategy = StrategyEngine(data).evaluate()
             signals = strategy.get("signals", {})
 
-            print("STRATEGY SIGNALS:", signals)
-
             # -----------------------------------
             # Trend filter
             # -----------------------------------
             if not signals.get("above_200_dma"):
-                print("FAILED TREND FILTER")
                 return []
 
             # -----------------------------------
@@ -142,10 +122,7 @@ class OptionsEngine:
             )
 
             if not expirations:
-                print(f"{symbol}: no option expirations returned")
                 return []
-
-            print(f"USING {len(expirations)} EXPIRATIONS")
 
             opportunities = []
 
@@ -166,21 +143,10 @@ class OptionsEngine:
                 :self.MAX_EXPIRATIONS_TO_SCAN
             ]
 
-            print(
-                f"SCANNING "
-                f"{len(valid_expirations)} "
-                f"EXPIRATIONS"
-            )
-
             for i, (expiry, dte) in enumerate(valid_expirations):
 
                 if i > 0:
                     time.sleep(1)
-
-                print(
-                    f"\nCHECKING EXPIRY "
-                    f"{expiry} | DTE={dte}"
-                )
 
                 chain = self._get_cached_option_chain(
                     ticker,
@@ -189,16 +155,12 @@ class OptionsEngine:
                 )
 
                 if chain is None:
-                    print(f"FAILED OPTION CHAIN {expiry}")
                     continue
 
                 puts = chain.puts
 
                 if puts is None or puts.empty:
-                    print(f"NO PUTS FOR {expiry}")
                     continue
-
-                print(f"PUT COUNT: {len(puts)}")
 
                 # -----------------------------------
                 # Loop put contracts
@@ -234,14 +196,6 @@ class OptionsEngine:
                             premium = bid
                         else:
                             continue
-
-                        print(
-                            f"STRIKE={strike:.2f} "
-                            f"BID={bid:.2f} "
-                            f"ASK={ask:.2f} "
-                            f"LAST={last:.2f} "
-                            f"PREM={premium:.2f}"
-                        )
 
                         distance_pct = (strike - price) / price
 
@@ -301,20 +255,8 @@ class OptionsEngine:
                             "recommendation": self._label(score),
                         })
 
-                    except Exception as e:
-                        print("ROW ERROR:", e)
-
-            # -----------------------------------
-            # Final diagnostics
-            # -----------------------------------
-            print(
-                f"========== CSP DEBUG "
-                f"FOR {symbol} =========="
-            )
-            print(f"TOTAL OPPORTUNITIES: {len(opportunities)}")
-
-            if not opportunities:
-                print("NO CSP OPPORTUNITIES FOUND")
+                    except Exception:
+                        pass
 
             return sorted(
                 opportunities,
@@ -322,12 +264,7 @@ class OptionsEngine:
                 reverse=True
             )
 
-        except Exception as e:
-
-            print("========== EXCEPTION ==========")
-            traceback.print_exc()
-            print("===============================")
-            print(f"CSP ENGINE FAILURE FOR {symbol}: {e}")
+        except Exception:
 
             return []
 
@@ -349,15 +286,7 @@ class OptionsEngine:
             age = time.time() - entry["timestamp"]
 
             if age < self.EXPIRATION_CACHE_SECONDS:
-
-                print(
-                    f"USING CACHED EXPIRATIONS "
-                    f"FOR {symbol}"
-                )
-
                 return entry["expirations"]
-
-        print("FETCHING EXPIRATIONS...")
 
         expirations = None
 
@@ -365,40 +294,21 @@ class OptionsEngine:
 
             try:
 
-                print(f"EXPIRATION ATTEMPT {attempt + 1}")
-
-                print("FETCHING OPTIONS FOR:", symbol)
-                print("YF VERSION:", yf.__version__)
-
                 expirations = ticker.options
 
                 if expirations:
-                    print("EXPIRATIONS FETCH SUCCESS")
                     break
 
             except Exception as ex:
 
                 msg = str(ex).lower()
                 if "429" in msg or "too many" in msg:
-                    print(
-                        f"EXPIRATION ATTEMPT "
-                        f"{attempt + 1} FAILED: rate limited"
-                    )
                     if symbol in cache:
-                        print(
-                            f"RATE LIMITED — returning stale "
-                            f"expirations for {symbol}"
-                        )
                         return cache[symbol]["expirations"]
                     # Don't retry 429 — retries hold memory and
                     # worsen throttling. Fail fast.
                     return []
                 else:
-                    print(
-                        f"EXPIRATION ATTEMPT "
-                        f"{attempt + 1} FAILED:",
-                        ex
-                    )
                     time.sleep(3 * (2 ** attempt))
 
         if expirations:
@@ -409,18 +319,11 @@ class OptionsEngine:
             }
 
             self._save_expiration_cache(cache)
-            print(f"CACHED EXPIRATIONS FOR {symbol}")
 
             return expirations
 
         # Fallback to stale cache
         if symbol in cache:
-
-            print(
-                f"USING STALE CACHED "
-                f"EXPIRATIONS FOR {symbol}"
-            )
-
             return cache[symbol]["expirations"]
 
         return []
@@ -436,17 +339,16 @@ class OptionsEngine:
                 with open(self.EXPIRATION_CACHE_FILE, "r") as f:
                     return json.load(f)
 
-        except Exception as ex:
-            print("CACHE LOAD ERROR:", ex)
+        except Exception:
+            pass
 
         # File missing (e.g. after Render redeploy) — fall back to DB
         try:
             row = get_cache("expiration_cache")
             if row:
-                print("EXPIRATION CACHE: loaded from DB")
                 return json.loads(row["value"])
-        except Exception as ex:
-            print("EXPIRATION CACHE DB LOAD ERROR:", ex)
+        except Exception:
+            pass
 
         return {}
 
@@ -458,13 +360,13 @@ class OptionsEngine:
         try:
             with open(self.EXPIRATION_CACHE_FILE, "w") as f:
                 json.dump(cache, f)
-        except Exception as ex:
-            print("CACHE SAVE ERROR:", ex)
+        except Exception:
+            pass
 
         try:
             set_cache("expiration_cache", json.dumps(cache), time.time())
-        except Exception as ex:
-            print("EXPIRATION CACHE DB SAVE ERROR:", ex)
+        except Exception:
+            pass
 
     # -----------------------------------
     # Cached option chain fetch
@@ -485,12 +387,6 @@ class OptionsEngine:
             age = time.time() - cache_time
 
             if age < self.OPTION_CHAIN_CACHE_SECONDS:
-
-                print(
-                    f"USING OPTION "
-                    f"CHAIN CACHE {expiry}"
-                )
-
                 return chain
 
         try:
@@ -502,13 +398,9 @@ class OptionsEngine:
                 chain
             )
 
-            print(f"CACHED OPTION CHAIN {expiry}")
-
             return chain
 
-        except Exception as ex:
-
-            print(f"OPTION CHAIN FAILED {expiry}: {ex}")
+        except Exception:
             return None
 
     # -----------------------------------

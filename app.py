@@ -9,11 +9,6 @@ from options_engine import get_shared_engine
 import yfinance as yf
 import pandas as pd
 
-print("\n" + "=" * 60)
-print("YFINANCE VERSION:", yf.__version__)
-print("PANDAS VERSION:", pd.__version__)
-print("=" * 60 + "\n")
-
 load_dotenv()
 
 from market_data.provider import fetch_snapshot
@@ -110,9 +105,6 @@ def validate_user_import_json(payload: dict):
 def build_row(symbol: str):
     snap = fetch_snapshot(symbol)
     result = get_trade_recommendation(snap)
-
-    # DEBUG: inspect actual trade engine payload
-    print(f"{symbol} TRADE RESULT:", result)
 
     rationale = ""
 
@@ -255,28 +247,7 @@ def view_csp(symbol):
 
     try:
         opportunities = options_engine.find_csp_opportunities(symbol.upper())
-
-        # -------------------------
-        # DEBUGGING OUTPUT
-        # -------------------------
-        print(f"========== CSP DEBUG FOR {symbol.upper()} ==========")
-        print("TOTAL OPPORTUNITIES:", len(opportunities))
-
-        for idx, opp in enumerate(opportunities):
-            print(f"#{idx+1}: {opp}")
-
-        if not opportunities:
-            print("NO CSP OPPORTUNITIES FOUND")
-            print("Possible causes:")
-            print("- Stock not above 200 DMA")
-            print("- No valid option expirations")
-            print("- No strikes within 5–15% OTM range")
-            print("- Premium too low")
-            print("- yfinance option chain empty")
-
-    except Exception as e:
-        print("========== CSP ENGINE ERROR ==========")
-        print(e)
+    except Exception:
         opportunities = []
 
     return render_template(
@@ -365,11 +336,6 @@ def top_csp():
 
     opportunities = get_top_csp_opportunities()
 
-    for r in opportunities[:5]:
-        print(r["symbol"], r["score"])
-
-    print("TOP CSP COUNT:", len(opportunities))
-
     return render_template(
         "top_csp.html",
         opportunities=opportunities
@@ -380,56 +346,6 @@ def top_csp():
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
-@app.route("/debug-options")
-def debug_options():
-    if "user_id" not in session:
-        return {"error": "unauthorized"}, 401
-
-    import yfinance as yf
-
-    ticker = yf.Ticker("SPY")
-
-    try:
-        opts = ticker.options
-
-        print("OPTIONS:", opts)
-
-        return {
-            "count": len(opts),
-            "options": list(opts[:5])
-        }
-
-    except Exception as ex:
-
-        print("OPTION ERROR:", ex)
-
-        return {
-            "error": str(ex)
-        }
-
-@app.route("/debug-history")
-def debug_history():
-    if "user_id" not in session:
-        return {"error": "unauthorized"}, 401
-
-    import yfinance as yf
-
-    ticker = yf.Ticker("SPY")
-
-    try:
-
-        hist = ticker.history(period="5d")
-
-        return {
-            "rows": len(hist)
-        }
-
-    except Exception as ex:
-
-        return {
-            "error": str(ex)
-        }
 
 init_db()
 

@@ -31,14 +31,11 @@ def _load_top_csp_cache(allow_stale=False):
                 data = json.load(f)
             age = time.time() - data.get("timestamp", 0)
             if age < _TOP_CSP_CACHE_SECONDS:
-                print(f"TOP CSP CACHE HIT (age={int(age)}s)")
                 return data["opportunities"]
             if allow_stale and data.get("opportunities"):
-                print(f"TOP CSP STALE CACHE (age={int(age)}s)")
                 return data["opportunities"]
-            print(f"TOP CSP CACHE EXPIRED (age={int(age)}s)")
-    except Exception as ex:
-        print("TOP CSP CACHE LOAD ERROR:", ex)
+    except Exception:
+        pass
 
     # File missing or expired — fall back to DB
     try:
@@ -47,13 +44,11 @@ def _load_top_csp_cache(allow_stale=False):
             age = time.time() - row["timestamp"]
             opps = json.loads(row["value"])
             if age < _TOP_CSP_CACHE_SECONDS:
-                print(f"TOP CSP DB CACHE HIT (age={int(age)}s)")
                 return opps
             if allow_stale and opps:
-                print(f"TOP CSP DB STALE CACHE (age={int(age)}s)")
                 return opps
-    except Exception as ex:
-        print("TOP CSP DB CACHE LOAD ERROR:", ex)
+    except Exception:
+        pass
 
     return None
 
@@ -64,23 +59,20 @@ def _save_top_csp_cache(opportunities):
     try:
         with open(_TOP_CSP_CACHE_FILE, "w") as f:
             json.dump(data, f)
-        print(f"TOP CSP CACHE SAVED ({len(opportunities)} opportunities)")
-    except Exception as ex:
-        print("TOP CSP CACHE SAVE ERROR:", ex)
+    except Exception:
+        pass
 
     try:
         set_cache("top_csp_cache", json.dumps(opportunities), ts)
-    except Exception as ex:
-        print("TOP CSP DB CACHE SAVE ERROR:", ex)
+    except Exception:
+        pass
 
 
 def _scan_symbol(symbol):
     try:
         opps = options_engine.find_csp_opportunities(symbol)
-        print(f"TOP CSP SCAN {symbol}: {len(opps)} opportunities")
         return opps[:3] if opps else []
-    except Exception as ex:
-        print(f"TOP CSP SCAN ERROR {symbol}: {ex}")
+    except Exception:
         return []
 
 
@@ -114,8 +106,8 @@ def _background_refresh_loop():
     while True:
         try:
             _do_scan()
-        except Exception as ex:
-            print("TOP CSP BG THREAD ERROR:", ex)
+        except Exception:
+            pass
         time.sleep(_TOP_CSP_CACHE_SECONDS)
 
 
@@ -129,7 +121,6 @@ def _ensure_bg_thread():
                 name="top-csp-refresh"
             )
             _bg_thread.start()
-            print("TOP CSP: background refresh thread started")
 
 
 def get_top_csp_opportunities():
