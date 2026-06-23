@@ -270,6 +270,24 @@ def remove_ticker(symbol):
 
 
 # =========================
+# ADMIN UTILITIES
+# =========================
+
+@app.route("/admin/clear-cache")
+def admin_clear_cache():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    from database import set_cache
+    import time
+    set_cache("top_csp_cache", "[]", time.time())
+    return "top_csp_cache cleared — background scan will repopulate within a few minutes.", 200
+
+
+# =========================
 # ADMIN UPLOAD
 # =========================
 
