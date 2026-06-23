@@ -2,6 +2,86 @@
 
 ---
 
+## Session: 2026-06-22
+
+### 1. Watchlist Blown Away on Render — Diagnosed
+
+**Problem:** Dashboard showed only 3 tickers (AAPL, MSFT, NVDA) after the P4 deploy.
+
+**Root cause:** Render PostgreSQL `user_tickers` data was wiped (likely a Render free-tier instance reset during the P4 redeploy). When the user next logged in, `ensure_default_tickers_for_user()` in `app.py:171` found 0 tickers and seeded the 3 defaults (`DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]`). The P4 code changes themselves are safe — all `CREATE TABLE IF NOT EXISTS`, nothing drops data.
+
+**Fix:** User manually re-added the full watchlist via the dashboard UI. No code change needed.
+
+**Note:** `top_csp.py` has its own hardcoded `WATCHLIST` (independent of the user DB), so Top-CSP was never affected.
+
+---
+
+### 2. P5A — Strip Debug Print Statements — DONE, committed `36637c6`
+
+Removed all `print()` calls from `app.py`, `options_engine.py`, and `top_csp.py`:
+- Startup version banner (app.py lines 12-15)
+- Per-symbol trade result debug print in `build_row`
+- Full CSP debug block in `/csp/<symbol>` route
+- Top-CSP score dump in `/top-csp` route
+- All scan/cache/expiration/chain debug prints in `options_engine.py` (45+ prints)
+- All cache hit/miss/save prints in `top_csp.py`
+- Removed unused `import traceback` from `options_engine.py`
+- Empty `except` blocks after print removal replaced with `except Exception: pass`
+
+---
+
+### 3. P5B — Remove Debug Routes — DONE, committed `36637c6`
+
+Deleted `/debug-options` and `/debug-history` routes from `app.py`. Both were login-gated but had no business being in prod.
+
+---
+
+## Commits This Session (2026-06-22)
+- `36637c6` — P5: Strip debug print statements and remove debug routes
+
+---
+
+## Pending for Next Session
+
+### Test Coverage
+**Zero project tests exist.** pytest 9.0.2 is already installed in `.venv`.
+
+**Plan — write `tests/` directory with four files:**
+
+1. **`conftest.py`** (project root) — sets `EODHD_API_KEY=test-key` before any imports (provider.py raises RuntimeError at import if not set)
+
+2. **`tests/test_trade_advisor.py`** — `StrategyEngine.evaluate()`:
+   - BUY signal: above both DMAs + RSI oversold + near 52w low
+   - SELL signal: near 52w high + RSI not oversold
+   - HOLD: neutral/mixed signals
+   - Missing price → HOLD with confidence=0
+   - Missing DMA or RSI → HOLD
+   - Invalid price type → TypeError
+   - RSI boundary conditions (≤30 oversold, >70 overbought)
+   - 52w positioning boundaries (price ≤ low*1.05 = near_low, price ≥ high*0.95 = near_high)
+   - Confidence clamped 0–100
+
+3. **`tests/test_options_engine.py`** — Pure OptionsEngine methods (no yfinance):
+   - `_put_delta`: ATM (~-0.46), deep OTM (~0), deep ITM (~-1), zero IV/DTE/price → None
+   - `_score_csp`: max score (11), zero score, partial signals
+   - `_label`: STRONG (≥8), GOOD (5–7), OK (3–4), WEAK (<3)
+   - `_days_to_expiry`: future date, past date
+   - `_build_indicator_data_from_hist`: <200 rows → `{}`, 250 rows → all fields present
+
+4. **`tests/test_provider.py`** — Pure functions (no HTTP):
+   - `calculate_rsi`: too-short series → None, monotonic up → >90, monotonic down → <10, mixed → 0–100
+   - `safe_float`: normal float, string number, None → None, invalid string → None
+
+5. **`tests/test_database.py`** — SQLite CRUD via `monkeypatch` on `database._DB_PATH`:
+   - `create_user` + `get_user_by_email` + `get_user_by_id`
+   - `add_ticker_to_user`, `get_tickers_for_user`, `remove_ticker_from_user`
+   - Idempotency: adding same ticker twice doesn't duplicate
+   - `set_cache` + `get_cache` hit and miss
+
+**What to skip:** `find_csp_opportunities` (yfinance + threading), Flask routes, `top_csp.py` background thread.
+
+---
+
 ## Session: 2026-06-21
 
 ### 1. Standardized CSP Display Columns — DONE, committed `5e2eafb`
@@ -79,29 +159,9 @@
 
 ---
 
-## Pending for Next Session
-- **P5A** — Strip debug `print` statements from `app.py`, `options_engine.py`, `top_csp.py` (log spam in prod)
-- **P5B** — Remove `/debug-options` and `/debug-history` routes (login-gated but exposed in prod)
-- **NVDIA typo** — Persists in live Render PostgreSQL watchlist; remove via dashboard UI, don't re-run admin import with old file
+## Full Issue Backlog
 
-## Validation Checklist for Next Session
-Before starting new work, verify these on the live Render app:
-1. `/top-csp` — shows results (not empty), all deltas in -0.25 to -0.30 range (or `—` if IV missing)
-2. `/csp/SPY` — returns results after background scan has warmed the expiration cache
-3. After a fresh deploy — `/top-csp` serves stale results from PostgreSQL immediately (not "Scan in progress")
-4. Check Render logs: `EXPIRATION CACHE: loaded from DB` or `TOP CSP DB CACHE HIT` should appear after redeploy
-5. No NVDIA in dashboard watchlist
-
----
-
-## Full Issue Backlog (Priority Order)
-
-### P5 — Low Noise
-
-**H. Debug prints** — `app.py`, `options_engine.py`, `top_csp.py` spam logs in prod.
-
-**I. Debug routes** — `/debug-options` and `/debug-history` are exposed in prod
-(login-gated, low risk, but should be removed).
+**All P2–P5 items complete as of 2026-06-22. Only remaining work is test coverage (see Pending above).**
 
 ---
 
