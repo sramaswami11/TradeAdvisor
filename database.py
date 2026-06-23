@@ -128,6 +128,15 @@ def get_user_by_id(user_id: int):
 # =========================
 # Tickers
 # =========================
+def get_all_tickers() -> list[str]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT DISTINCT symbol FROM user_tickers ORDER BY symbol")
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+
 def get_tickers_for_user(user_id: int):
     conn = get_connection()
     c = conn.cursor()

@@ -4,7 +4,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from options_engine import get_shared_engine
-from database import get_cache, set_cache
+from database import get_cache, set_cache, get_all_tickers
 
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 _TOP_CSP_CACHE_FILE = os.path.join(_CACHE_DIR, "top_csp_cache.json")
@@ -12,9 +12,8 @@ _TOP_CSP_CACHE_SECONDS = 3600  # 1 hour
 
 options_engine = get_shared_engine()
 
-WATCHLIST = [
-    "HOOD", "SOFI", "GDX", "DAL", "IBKR", "SPY", "NVDA", "XLE"
-]
+# Fallback used only when no users have tickers yet (e.g. fresh deploy)
+_DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "SPY"]
 
 # Serialized to stay within Render free tier memory (512MB)
 _SCAN_WORKERS = 1
@@ -77,10 +76,11 @@ def _scan_symbol(symbol):
 
 
 def _do_scan():
+    watchlist = get_all_tickers() or _DEFAULT_WATCHLIST
     per_symbol = {}
 
     with ThreadPoolExecutor(max_workers=_SCAN_WORKERS) as executor:
-        futures = {executor.submit(_scan_symbol, sym): sym for sym in WATCHLIST}
+        futures = {executor.submit(_scan_symbol, sym): sym for sym in watchlist}
         for future in as_completed(futures):
             sym = futures[future]
             result = future.result()
