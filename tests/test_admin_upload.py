@@ -13,7 +13,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_EMAIL", "admin@test.com")
 
     import database
-    monkeypatch.setattr(database, "DB_PATH", db_path)
+    monkeypatch.setattr(database, "_DB_PATH", db_path)
 
     init_db()
 

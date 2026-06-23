@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from datetime import datetime, timedelta
 
 from options_engine import OptionsEngine
 
@@ -12,7 +13,7 @@ class MockTicker:
     def __init__(self, symbol):
         self.symbol = symbol
 
-    def history(self, period="1d"):
+    def history(self, period="1d", **kwargs):
         """
         Strong bullish trend:
         - Enough data for DMA50 / DMA200
@@ -26,7 +27,7 @@ class MockTicker:
 
     @property
     def options(self):
-        return ["2026-06-20"]
+        return [(datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")]
 
     def option_chain(self, expiry):
         """
@@ -71,6 +72,10 @@ def test_csp_engine_returns_results(monkeypatch):
     # Replace yf.Ticker with bullish mock
     monkeypatch.setattr(options_engine.yf, "Ticker", MockTicker)
 
+    # Bypass file/DB expiration cache so MockTicker.options is always called
+    monkeypatch.setattr(OptionsEngine, "_load_expiration_cache", lambda self: {})
+    monkeypatch.setattr(OptionsEngine, "_save_expiration_cache", lambda self, cache: None)
+
     engine = OptionsEngine()
 
     results = engine.find_csp_opportunities("AAPL")
@@ -82,7 +87,8 @@ def test_csp_engine_returns_results(monkeypatch):
 
     assert "symbol" in r
     assert "strike" in r
-    assert "premium" in r
+    assert "bid" in r
+    assert "ask" in r
     assert "score" in r
     assert "recommendation" in r
 
@@ -100,7 +106,7 @@ def test_csp_engine_filters_bad_trend(monkeypatch):
     import options_engine
 
     class BadTicker(MockTicker):
-        def history(self, period="1d"):
+        def history(self, period="1d", **kwargs):
             # Strong bearish decline
             closes = list(range(300, 50, -1))
             return pd.DataFrame({
@@ -114,3 +120,129 @@ def test_csp_engine_filters_bad_trend(monkeypatch):
     results = engine.find_csp_opportunities("BAD")
 
     assert results == []
+
+
+# =========================================================
+# Pure method tests — no yfinance, no network
+# =========================================================
+
+# -------------------------
+# _put_delta
+# -------------------------
+
+def test_put_delta_atm():
+    engine = OptionsEngine()
+    delta = engine._put_delta(price=100, strike=100, dte=30, iv=0.2)
+    assert delta is not None
+    assert -0.55 <= delta <= -0.40  # ATM put ~-0.46
+
+def test_put_delta_deep_otm():
+    engine = OptionsEngine()
+    delta = engine._put_delta(price=100, strike=70, dte=30, iv=0.2)
+    assert delta is not None
+    assert -0.05 <= delta <= 0.0  # far OTM, delta near zero
+
+def test_put_delta_deep_itm():
+    engine = OptionsEngine()
+    delta = engine._put_delta(price=100, strike=130, dte=30, iv=0.2)
+    assert delta is not None
+    assert delta <= -0.80  # deep ITM, delta near -1
+
+def test_put_delta_zero_iv_returns_none():
+    engine = OptionsEngine()
+    assert engine._put_delta(price=100, strike=100, dte=30, iv=0) is None
+
+def test_put_delta_zero_dte_returns_none():
+    engine = OptionsEngine()
+    assert engine._put_delta(price=100, strike=100, dte=0, iv=0.2) is None
+
+def test_put_delta_zero_price_returns_none():
+    engine = OptionsEngine()
+    assert engine._put_delta(price=0, strike=100, dte=30, iv=0.2) is None
+
+
+# -------------------------
+# _score_csp
+# -------------------------
+
+def test_score_csp_max():
+    engine = OptionsEngine()
+    signals = {"above_200_dma": True, "above_50_dma": True, "rsi_state": "neutral"}
+    score = engine._score_csp(signals, yield_pct=0.02, annualized=0.30, distance_pct=-0.16)
+    assert score == 11
+
+def test_score_csp_zero():
+    engine = OptionsEngine()
+    score = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03)
+    assert score == 0
+
+def test_score_csp_partial():
+    engine = OptionsEngine()
+    signals = {"above_200_dma": True, "rsi_state": "neutral"}
+    # above_200_dma(+2) + rsi neutral(+1) + yield>0.005(+1) + annualized>0.10(+1) = 5
+    score = engine._score_csp(signals, yield_pct=0.006, annualized=0.15, distance_pct=-0.05)
+    assert score == 5
+
+
+# -------------------------
+# _label
+# -------------------------
+
+def test_label_strong():
+    engine = OptionsEngine()
+    assert engine._label(8) == "STRONG"
+    assert engine._label(11) == "STRONG"
+
+def test_label_good():
+    engine = OptionsEngine()
+    assert engine._label(5) == "GOOD"
+    assert engine._label(7) == "GOOD"
+
+def test_label_ok():
+    engine = OptionsEngine()
+    assert engine._label(3) == "OK"
+    assert engine._label(4) == "OK"
+
+def test_label_weak():
+    engine = OptionsEngine()
+    assert engine._label(0) == "WEAK"
+    assert engine._label(2) == "WEAK"
+
+
+# -------------------------
+# _days_to_expiry
+# -------------------------
+
+def test_days_to_expiry_future():
+    engine = OptionsEngine()
+    future = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    assert engine._days_to_expiry(future) >= 6  # could be 6 or 7 depending on time of day
+
+def test_days_to_expiry_past():
+    engine = OptionsEngine()
+    assert engine._days_to_expiry("2020-01-01") < 0
+
+
+# -------------------------
+# _build_indicator_data_from_hist
+# -------------------------
+
+def test_build_indicator_data_too_short_returns_empty():
+    engine = OptionsEngine()
+    hist = pd.DataFrame({"Close": list(range(100))})  # only 100 rows
+    assert engine._build_indicator_data_from_hist(hist, 99) == {}
+
+def test_build_indicator_data_sufficient_has_all_fields():
+    engine = OptionsEngine()
+    hist = pd.DataFrame({"Close": list(range(50, 300))})  # 250 rows
+    result = engine._build_indicator_data_from_hist(hist, 299)
+    for key in ("current_price", "dma_50", "dma_200", "52w_low", "52w_high", "rsi_14"):
+        assert key in result
+
+def test_build_indicator_data_values_are_numeric():
+    engine = OptionsEngine()
+    hist = pd.DataFrame({"Close": list(range(50, 300))})
+    result = engine._build_indicator_data_from_hist(hist, 299)
+    assert isinstance(result["dma_200"], float)
+    assert isinstance(result["dma_50"], float)
+    assert result["dma_200"] < result["dma_50"]  # rising prices: shorter MA > longer MA
