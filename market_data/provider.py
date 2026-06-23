@@ -2,28 +2,28 @@
 import json
 import logging
 import os
+import threading
 import time
 
 import pandas as pd
-import requests
+import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
-EOD_API_KEY = os.getenv("EODHD_API_KEY")
-if not EOD_API_KEY:
-    raise RuntimeError("EODHD_API_KEY environment variable not set")
-
-BASE_URL = "https://eodhd.com/api/eod"
-
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
-_SNAPSHOT_CACHE_TTL = 4 * 3600  # 4 hours — EOD data changes once per day
+_SNAPSHOT_CACHE_TTL = 900  # 15 minutes — refresh prices during market hours
+
+# Single semaphore shared with options_engine to cap concurrent yfinance calls.
+# Both dashboard snapshot fetches and the CSP scanner acquire this before
+# calling yfinance, keeping memory within Render's 512 MB free tier.
+_yf_semaphore = threading.Semaphore(1)
 
 
 def _snapshot_cache_path(symbol: str) -> str:
     return os.path.join(_CACHE_DIR, f"snapshot_cache_{symbol}.json")
 
 
-def _load_snapshot_cache(symbol: str):
+def _load_snapshot_cache(symbol: str, ignore_ttl: bool = False):
     try:
         path = _snapshot_cache_path(symbol)
         if not os.path.exists(path):
@@ -31,13 +31,10 @@ def _load_snapshot_cache(symbol: str):
         with open(path, "r") as f:
             data = json.load(f)
         age = time.time() - data.get("timestamp", 0)
-        if age < _SNAPSHOT_CACHE_TTL:
-            logger.warning(f"{symbol}: snapshot cache hit (age={int(age)}s)")
+        if ignore_ttl or age < _SNAPSHOT_CACHE_TTL:
             return data["snapshot"]
-        logger.warning(f"{symbol}: snapshot cache expired (age={int(age)}s)")
         return None
-    except Exception as ex:
-        logger.error(f"{symbol}: snapshot cache load error: {ex}")
+    except Exception:
         return None
 
 
@@ -46,9 +43,8 @@ def _save_snapshot_cache(symbol: str, snapshot: dict):
         path = _snapshot_cache_path(symbol)
         with open(path, "w") as f:
             json.dump({"timestamp": time.time(), "snapshot": snapshot}, f)
-        logger.warning(f"{symbol}: snapshot cache saved")
-    except Exception as ex:
-        logger.error(f"{symbol}: snapshot cache save error: {ex}")
+    except Exception:
+        pass
 
 
 def calculate_rsi(series: pd.Series, period: int = 14) -> float | None:
@@ -79,71 +75,54 @@ def fetch_snapshot(symbol: str) -> dict:
     if cached is not None:
         return cached
 
+    _yf_semaphore.acquire()
     try:
-        logger.warning(f"{symbol}: fetching fresh market data")
+        logger.info(f"{symbol}: fetching snapshot from yfinance")
+        hist = yf.Ticker(symbol).history(period="1y", auto_adjust=True)
 
-        url = f"{BASE_URL}/{symbol}.US"
-        params = {
-            "api_token": EOD_API_KEY,
-            "period": "d",
-            "fmt": "json",
-        }
+        if hist is None or hist.empty or len(hist) < 2:
+            raise ValueError(f"Insufficient price history for {symbol}")
 
-        # FIXED: Increased timeout from 10 to 30 seconds
-        resp = requests.get(url, params=params, timeout=30)
-        resp.raise_for_status()
+        close = hist["Close"]
+        last_close = float(close.iloc[-1])
+        prev_close = float(close.iloc[-2])
 
-        data = resp.json()
-        if not isinstance(data, list) or len(data) < 20:
-            raise ValueError("Insufficient OHLC data")
+        change_pct = round((last_close / prev_close - 1) * 100, 2)
 
-        df = pd.DataFrame(data)
-        for col in ["open", "high", "low", "close", "volume"]:
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-        df.dropna(inplace=True)
-
-        if len(df) < 20:
-            raise ValueError("Not enough clean rows")
-
-        close = df["close"]
+        last_ts = hist.index[-1]
+        as_of = last_ts.date().isoformat() if hasattr(last_ts, "date") else str(last_ts)[:10]
 
         snapshot = {
             "symbol": symbol,
-            "current_price": safe_float(close.iloc[-1]),
-            "dma_50": safe_float(close.rolling(50).mean().iloc[-1]) if len(df) >= 50 else None,
-            "dma_200": safe_float(close.rolling(200).mean().iloc[-1]) if len(df) >= 200 else None,
+            "current_price": safe_float(last_close),
+            "change_pct": change_pct,
+            "as_of": as_of,
+            "dma_50": safe_float(close.rolling(50).mean().iloc[-1]) if len(hist) >= 50 else None,
+            "dma_200": safe_float(close.rolling(200).mean().iloc[-1]) if len(hist) >= 200 else None,
             "rsi_14": calculate_rsi(close),
-            "volume": safe_float(df["volume"].iloc[-1]),
             "52w_high": safe_float(close.tail(252).max()),
             "52w_low": safe_float(close.tail(252).min()),
         }
 
-        logger.warning(
-            f"{symbol}: RSI={snapshot['rsi_14']} "
-            f"DMA50={snapshot['dma_50']} "
-            f"DMA200={snapshot['dma_200']} "
-            f"VOL={snapshot['volume']}"
-        )
-
         _save_snapshot_cache(symbol, snapshot)
         return snapshot
 
-    except requests.exceptions.Timeout:
-        logger.error(f"{symbol}: request timed out after 30 seconds")
-        stale = _load_snapshot_cache(symbol)
-        if stale is not None:
-            logger.warning(f"{symbol}: serving stale snapshot after timeout")
-            return stale
-        return {"symbol": symbol, "current_price": None, "dma_50": None,
-                "dma_200": None, "rsi_14": None, "volume": None,
-                "52w_high": None, "52w_low": None}
-
     except Exception as e:
-        logger.error(f"{symbol}: fetch failed → {e}")
-        stale = _load_snapshot_cache(symbol)
-        if stale is not None:
-            logger.warning(f"{symbol}: serving stale snapshot after error")
+        logger.error(f"{symbol}: snapshot fetch failed → {e}")
+        stale = _load_snapshot_cache(symbol, ignore_ttl=True)
+        if stale:
             return stale
-        return {"symbol": symbol, "current_price": None, "dma_50": None,
-                "dma_200": None, "rsi_14": None, "volume": None,
-                "52w_high": None, "52w_low": None}
+        return {
+            "symbol": symbol,
+            "current_price": None,
+            "change_pct": None,
+            "as_of": None,
+            "dma_50": None,
+            "dma_200": None,
+            "rsi_14": None,
+            "52w_high": None,
+            "52w_low": None,
+        }
+
+    finally:
+        _yf_semaphore.release()

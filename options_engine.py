@@ -10,7 +10,6 @@ Uses:
 import json
 import math
 import os
-import threading
 import time
 
 import pandas as pd
@@ -19,7 +18,7 @@ import yfinance as yf
 from datetime import datetime
 
 from trade_advisor import StrategyEngine
-from market_data.provider import calculate_rsi
+from market_data.provider import calculate_rsi, _yf_semaphore
 from database import get_cache, set_cache
 
 
@@ -28,10 +27,6 @@ from database import get_cache, set_cache
 # (ephemeral but at least writable)
 # ------------------------------------
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
-
-# Limit to 1 concurrent yfinance call across background thread + web requests
-# to stay within Render free tier memory (512MB).
-_yf_semaphore = threading.Semaphore(1)
 
 
 class OptionsEngine:

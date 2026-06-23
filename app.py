@@ -151,9 +151,12 @@ def build_row(symbol: str):
 
     return {
         "symbol": symbol,
-        "price": snap.get("current_price", "—"),
-        "dma50": snap.get("dma_50", "—"),
-        "dma200": snap.get("dma_200", "—"),
+        "price": snap.get("current_price"),
+        "change_pct": snap.get("change_pct"),
+        "rsi": snap.get("rsi_14"),
+        "as_of": snap.get("as_of"),
+        "dma50": snap.get("dma_50"),
+        "dma200": snap.get("dma_200"),
         "rating": result.get("action", "HOLD").capitalize(),
         "confidence": result.get("confidence", 0),
         "rationale": rationale,
