@@ -24,6 +24,7 @@ from database import (
 )
 
 from top_csp import get_top_csp_opportunities
+from top_cc import get_top_cc_opportunities
 
 options_engine = get_shared_engine()
 
@@ -354,11 +355,48 @@ def top_csp():
     if "user_id" not in session:
         return redirect(url_for("login"))
 
-
     opportunities = get_top_csp_opportunities()
 
     return render_template(
         "top_csp.html",
+        opportunities=opportunities
+    )
+
+
+@app.route("/cc/<symbol>")
+def view_cc(symbol):
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    user = get_user_by_id(session["user_id"])
+
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+
+    try:
+        opportunities = options_engine.find_cc_opportunities(symbol.upper())
+    except Exception:
+        opportunities = []
+
+    return render_template(
+        "cc_results.html",
+        symbol=symbol.upper(),
+        opportunities=opportunities,
+        user=user
+    )
+
+
+@app.route("/top-cc")
+def top_cc():
+
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+
+    opportunities = get_top_cc_opportunities()
+
+    return render_template(
+        "top_cc.html",
         opportunities=opportunities
     )
 

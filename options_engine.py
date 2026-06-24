@@ -1,5 +1,5 @@
 """
-Options Engine - CSP (Cash Secured Put) Scanner
+Options Engine - CSP and Covered Call Scanner
 
 Uses:
 - StrategyEngine (stock quality)
@@ -24,7 +24,6 @@ from database import get_cache, set_cache, record_iv, get_iv_rank
 
 # ------------------------------------
 # Render-safe: use /tmp for cache file
-# (ephemeral but at least writable)
 # ------------------------------------
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 
@@ -45,7 +44,19 @@ class OptionsEngine:
     def __init__(self):
         self._option_chain_cache = {}
 
+    # -----------------------------------
+    # Public API
+    # -----------------------------------
     def find_csp_opportunities(self, symbol, max_dte=14):
+        return self._find_opportunities(symbol, max_dte, "csp")
+
+    def find_cc_opportunities(self, symbol, max_dte=14):
+        return self._find_opportunities(symbol, max_dte, "cc")
+
+    # -----------------------------------
+    # Core scanner (CSP and CC)
+    # -----------------------------------
+    def _find_opportunities(self, symbol, max_dte, side):
 
         _yf_semaphore.acquire()
         try:
@@ -87,12 +98,8 @@ class OptionsEngine:
 
             # -----------------------------------
             # Build indicators from same hist
-            # (no second Yahoo call needed)
             # -----------------------------------
-            data = self._build_indicator_data_from_hist(
-                hist,
-                price
-            )
+            data = self._build_indicator_data_from_hist(hist, price)
             del hist  # free 1y of OHLCV data before options fetch
 
             if not data:
@@ -102,7 +109,8 @@ class OptionsEngine:
             signals = strategy.get("signals", {})
 
             # -----------------------------------
-            # Trend filter
+            # Trend filter — require above 200 DMA
+            # (stock quality gate for both CSP and CC)
             # -----------------------------------
             if not signals.get("above_200_dma"):
                 return []
@@ -111,10 +119,7 @@ class OptionsEngine:
             # Fetch expirations
             # -----------------------------------
             time.sleep(2)  # space out burst calls after history fetch
-            expirations = self._get_expirations(
-                ticker,
-                symbol
-            )
+            expirations = self._get_expirations(ticker, symbol)
 
             if not expirations:
                 return []
@@ -137,9 +142,7 @@ class OptionsEngine:
                     valid_expirations.append((expiry, dte))
 
             valid_expirations.sort(key=lambda x: x[1])
-            valid_expirations = valid_expirations[
-                :self.MAX_EXPIRATIONS_TO_SCAN
-            ]
+            valid_expirations = valid_expirations[:self.MAX_EXPIRATIONS_TO_SCAN]
 
             for i, (expiry, dte) in enumerate(valid_expirations):
 
@@ -152,24 +155,17 @@ class OptionsEngine:
                 if i > 0:
                     time.sleep(1)
 
-                chain = self._get_cached_option_chain(
-                    ticker,
-                    symbol,
-                    expiry
-                )
+                chain = self._get_cached_option_chain(ticker, symbol, expiry)
 
                 if chain is None:
                     continue
 
-                puts = chain.puts
+                contracts = chain.puts if side == "csp" else chain.calls
 
-                if puts is None or puts.empty:
+                if contracts is None or contracts.empty:
                     continue
 
-                # -----------------------------------
-                # Loop put contracts
-                # -----------------------------------
-                for _, row in puts.iterrows():
+                for _, row in contracts.iterrows():
 
                     try:
 
@@ -195,7 +191,7 @@ class OptionsEngine:
                                 atm_iv_distance = dist
 
                         # -----------------------------------
-                        # Premium calculation
+                        # Premium
                         # -----------------------------------
                         if last > 0:
                             premium = last
@@ -211,44 +207,46 @@ class OptionsEngine:
                         distance_pct = (strike - price) / price
 
                         # -----------------------------------
-                        # ATM to 10% OTM window
-                        # (exclude ITM puts; allow ATM and OTM)
+                        # OTM window filter
+                        # CSP: puts below price (0 to -10%)
+                        # CC:  calls above price (0 to +10%)
                         # -----------------------------------
-                        if (
-                            distance_pct > 0
-                            or distance_pct < -0.10
-                        ):
-                            continue
+                        if side == "csp":
+                            if distance_pct > 0 or distance_pct < -0.10:
+                                continue
+                        else:
+                            if distance_pct < 0 or distance_pct > 0.10:
+                                continue
 
                         # -----------------------------------
                         # Liquidity filter
                         # -----------------------------------
                         if ask > 0 and bid > 0:
-
                             spread_pct = (ask - bid) / ask
-
                             if spread_pct > 0.50:
                                 continue
 
                         yield_pct = premium / strike
+                        annualized = yield_pct * (365 / max(dte, 1))
 
-                        annualized = (
-                            yield_pct * (365 / max(dte, 1))
-                        )
+                        # -----------------------------------
+                        # Delta filter
+                        # CSP: put delta -0.25 to -0.30
+                        # CC:  call delta  0.25 to  0.30
+                        # -----------------------------------
+                        if side == "csp":
+                            delta = self._put_delta(price, strike, dte, iv)
+                            if delta is not None and not (-0.30 <= delta <= -0.25):
+                                continue
+                        else:
+                            delta = self._call_delta(price, strike, dte, iv)
+                            if delta is not None and not (0.25 <= delta <= 0.30):
+                                continue
 
-                        delta = self._put_delta(price, strike, dte, iv)
-
-                        # Only filter on delta when IV is available to compute it.
-                        # If IV is missing, let the strike through so rate-limited
-                        # or partial chain responses don't silently drop everything.
-                        if delta is not None and not (-0.30 <= delta <= -0.25):
-                            continue
-
-                        score = self._score_csp(
-                            signals,
-                            yield_pct,
-                            annualized,
-                            distance_pct
+                        score = (
+                            self._score_csp(signals, yield_pct, annualized, distance_pct)
+                            if side == "csp"
+                            else self._score_cc(signals, yield_pct, annualized, distance_pct)
                         )
 
                         opportunities.append({
@@ -266,6 +264,7 @@ class OptionsEngine:
                             "recommendation": self._label(score),
                             "earnings_warning": near_earnings,
                             "earnings_date": earnings_date.strftime("%Y-%m-%d") if earnings_date else None,
+                            "iv_rank": None,  # stamped below
                         })
 
                     except Exception:
@@ -280,18 +279,13 @@ class OptionsEngine:
             for opp in opportunities:
                 opp["iv_rank"] = iv_rank
 
-            return sorted(
-                opportunities,
-                key=lambda x: x["score"],
-                reverse=True
-            )
+            return sorted(opportunities, key=lambda x: x["score"], reverse=True)
 
         except Exception:
-
             return []
 
         finally:
-            self._option_chain_cache.clear()  # free DataFrames between scans
+            self._option_chain_cache.clear()
             _yf_semaphore.release()
 
     # -----------------------------------
@@ -305,7 +299,6 @@ class OptionsEngine:
             earnings = cal.get("Earnings Date")
             if not earnings:
                 return None
-            # yfinance returns a list of date objects
             dt = earnings[0] if isinstance(earnings, (list, tuple)) else earnings
             if isinstance(dt, date):
                 return dt
@@ -348,8 +341,6 @@ class OptionsEngine:
                 if "429" in msg or "too many" in msg:
                     if symbol in cache:
                         return cache[symbol]["expirations"]
-                    # Don't retry 429 — retries hold memory and
-                    # worsen throttling. Fail fast.
                     return []
                 else:
                     time.sleep(3 * (2 ** attempt))
@@ -365,7 +356,6 @@ class OptionsEngine:
 
             return expirations
 
-        # Fallback to stale cache
         if symbol in cache:
             return cache[symbol]["expirations"]
 
@@ -385,7 +375,6 @@ class OptionsEngine:
         except Exception:
             pass
 
-        # File missing (e.g. after Render redeploy) — fall back to DB
         try:
             row = get_cache("expiration_cache")
             if row:
@@ -414,12 +403,7 @@ class OptionsEngine:
     # -----------------------------------
     # Cached option chain fetch
     # -----------------------------------
-    def _get_cached_option_chain(
-        self,
-        ticker,
-        symbol,
-        expiry
-    ):
+    def _get_cached_option_chain(self, ticker, symbol, expiry):
 
         key = f"{symbol}_{expiry}"
         cached = self._option_chain_cache.get(key)
@@ -436,10 +420,7 @@ class OptionsEngine:
 
             chain = ticker.option_chain(expiry)
 
-            self._option_chain_cache[key] = (
-                time.time(),
-                chain
-            )
+            self._option_chain_cache[key] = (time.time(), chain)
 
             return chain
 
@@ -448,39 +429,17 @@ class OptionsEngine:
 
     # -----------------------------------
     # Indicator Builder
-    # (uses already-fetched hist — no
-    #  second Yahoo call)
+    # (uses already-fetched hist)
     # -----------------------------------
-    def _build_indicator_data_from_hist(
-        self,
-        hist,
-        price
-    ):
+    def _build_indicator_data_from_hist(self, hist, price):
 
-        if (
-            hist is None
-            or hist.empty
-            or len(hist) < 200
-        ):
+        if hist is None or hist.empty or len(hist) < 200:
             return {}
 
-        dma50 = (
-            hist["Close"]
-            .rolling(50)
-            .mean()
-            .iloc[-1]
-        )
-
-        dma200 = (
-            hist["Close"]
-            .rolling(200)
-            .mean()
-            .iloc[-1]
-        )
-
+        dma50 = hist["Close"].rolling(50).mean().iloc[-1]
+        dma200 = hist["Close"].rolling(200).mean().iloc[-1]
         low_52w = hist["Close"].min()
         high_52w = hist["Close"].max()
-
         rsi = calculate_rsi(hist["Close"])
 
         return {
@@ -495,22 +454,13 @@ class OptionsEngine:
     # -----------------------------------
     def _days_to_expiry(self, expiry_str):
 
-        expiry_date = datetime.strptime(
-            expiry_str, "%Y-%m-%d"
-        )
-
+        expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d")
         return (expiry_date - datetime.today()).days
 
     # -----------------------------------
     # Scoring
     # -----------------------------------
-    def _score_csp(
-        self,
-        signals,
-        yield_pct,
-        annualized,
-        distance_pct
-    ):
+    def _score_csp(self, signals, yield_pct, annualized, distance_pct):
 
         score = 0
 
@@ -543,6 +493,41 @@ class OptionsEngine:
 
         return score
 
+    def _score_cc(self, signals, yield_pct, annualized, distance_pct):
+
+        score = 0
+
+        if signals.get("above_200_dma"):
+            score += 2
+
+        if signals.get("above_50_dma"):
+            score += 1
+
+        # RSI overbought = extended stock, ideal for selling calls
+        if signals.get("rsi_state") == "overbought":
+            score += 1
+
+        if yield_pct > 0.005:
+            score += 1
+
+        if yield_pct > 0.01:
+            score += 2
+
+        if annualized > 0.10:
+            score += 1
+
+        if annualized > 0.20:
+            score += 1
+
+        # More OTM = more buffer before shares get called away
+        if distance_pct > 0.05:
+            score += 1
+
+        if distance_pct > 0.08:
+            score += 1
+
+        return score
+
     # -----------------------------------
     # Greeks
     # -----------------------------------
@@ -552,6 +537,13 @@ class OptionsEngine:
             return None
         d1 = (math.log(price / strike) + (0.05 + 0.5 * iv ** 2) * T) / (iv * math.sqrt(T))
         return round(0.5 * math.erfc(-d1 / math.sqrt(2)) - 1, 2)
+
+    def _call_delta(self, price, strike, dte, iv):
+        T = dte / 365.0
+        if T <= 0 or iv <= 0 or price <= 0 or strike <= 0:
+            return None
+        d1 = (math.log(price / strike) + (0.05 + 0.5 * iv ** 2) * T) / (iv * math.sqrt(T))
+        return round(0.5 * math.erfc(-d1 / math.sqrt(2)), 2)
 
     # -----------------------------------
     # Labels

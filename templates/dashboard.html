@@ -142,6 +142,7 @@
     <h2>Tickers for {{ user.name }}</h2>
     <div class="header-right">
         <a href="{{ url_for('top_csp') }}" class="action-link">Top CSP Opportunities</a>
+        <a href="{{ url_for('top_cc') }}" class="action-link">Top Covered Calls</a>
         <a href="{{ url_for('logout') }}" class="logout">Logout</a>
     </div>
 </div>
@@ -165,6 +166,7 @@
             <th>Confidence</th>
             <th>Rationale</th>
             <th>CSP</th>
+            <th>CC</th>
             <th></th>
         </tr>
 
@@ -195,6 +197,9 @@
             </td>
             <td>
                 <a class="action-link" href="{{ url_for('view_csp', symbol=t.symbol) }}">CSP</a>
+            </td>
+            <td>
+                <a class="action-link" href="{{ url_for('view_cc', symbol=t.symbol) }}">CC</a>
             </td>
             <td>
                 <a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a>
