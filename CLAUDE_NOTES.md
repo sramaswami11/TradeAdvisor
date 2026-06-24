@@ -2,6 +2,34 @@
 
 ---
 
+## Session: 2026-06-24
+
+### 1. P3 — Earnings Blackout — DONE
+
+**Problem:** Scanner could recommend selling a CSP that expires within days of an earnings release — high-risk situation where IV spikes pre-earnings and the stock can gap down violently.
+
+**Fix:** Added `_get_next_earnings(ticker)` to `OptionsEngine`:
+- Calls `ticker.calendar` (yfinance), extracts `Earnings Date[0]` as a `date` object
+- Returns `None` gracefully on any error (calendar unavailable, network failure, etc.)
+- Called once per symbol after expirations are fetched (already inside semaphore, no extra locking needed)
+
+**Flag logic:** For each expiry in the scan, `earnings_warning = abs((expiry_date - earnings_date).days) <= 5`.
+- Added `"earnings_warning": bool` field to every opportunity dict
+- Both `csp_results.html` and `top_csp.html` show `⚠ EARN` badge in the Expiry column when flagged
+- Rows are shown (not suppressed) — user sees the data and decides
+
+**Test coverage:** 6 new tests added to `test_options_engine.py` (60 total, all passing):
+- `test_get_next_earnings_returns_date` — normal case
+- `test_get_next_earnings_empty_calendar` — empty dict
+- `test_get_next_earnings_none_calendar` — None calendar
+- `test_get_next_earnings_exception_returns_none` — network error
+- `test_earnings_warning_flag_near` — within 5 days
+- `test_earnings_warning_flag_far` — outside 5 days
+- `MockTicker` updated with `calendar` property (earnings 60 days out, no warning)
+- Integration test asserts `earnings_warning` key present and `False` on mock
+
+---
+
 ## Session: 2026-06-23
 
 ### 1. Test Suite — Built and Fixed (54 tests passing)
@@ -88,12 +116,7 @@
 4. Show IV Rank alongside score in CSP results and Top CSP page
 5. Gets better over time as more readings accumulate in the DB
 
-### P3 — Earnings Blackout
-**Why:** App could recommend selling a CSP that expires after an earnings release — high-risk situation that should be flagged.
-
-**Plan:**
-- Use `yfinance ticker.calendar` to get next earnings date
-- Flag any CSP where expiry is within 5 days of earnings with a warning or suppress it
+### ~~P3 — Earnings Blackout~~ — DONE (2026-06-24)
 
 ### P4 — Top Covered Calls Page
 **Why:** Natural companion to Top CSP. Covered calls share ~80% of the CSP scanner code (same chain fetch, reversed direction — scan calls instead of puts, delta ~0.25–0.30, slightly OTM).

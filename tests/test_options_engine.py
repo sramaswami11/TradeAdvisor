@@ -1,6 +1,6 @@
 import pandas as pd
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 from options_engine import OptionsEngine
 
@@ -28,6 +28,11 @@ class MockTicker:
     @property
     def options(self):
         return [(datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")]
+
+    @property
+    def calendar(self):
+        # Earnings 60 days out — no warning expected
+        return {"Earnings Date": [(datetime.now() + timedelta(days=60)).date()]}
 
     def option_chain(self, expiry):
         """
@@ -94,6 +99,8 @@ def test_csp_engine_returns_results(monkeypatch):
 
     assert r["recommendation"] in ("STRONG", "GOOD", "OK", "WEAK")
     assert r["score"] > 0
+    assert "earnings_warning" in r
+    assert r["earnings_warning"] is False  # earnings 60 days out in mock
 
 
 def test_csp_engine_filters_bad_trend(monkeypatch):
@@ -246,3 +253,51 @@ def test_build_indicator_data_values_are_numeric():
     assert isinstance(result["dma_200"], float)
     assert isinstance(result["dma_50"], float)
     assert result["dma_200"] < result["dma_50"]  # rising prices: shorter MA > longer MA
+
+
+# -------------------------
+# _get_next_earnings
+# -------------------------
+
+class _CalTicker:
+    def __init__(self, cal):
+        self.calendar = cal
+
+def test_get_next_earnings_returns_date():
+    engine = OptionsEngine()
+    earnings_dt = date(2026, 8, 1)
+    ticker = _CalTicker({"Earnings Date": [earnings_dt]})
+    result = engine._get_next_earnings(ticker)
+    assert result == earnings_dt
+
+def test_get_next_earnings_empty_calendar():
+    engine = OptionsEngine()
+    ticker = _CalTicker({})
+    assert engine._get_next_earnings(ticker) is None
+
+def test_get_next_earnings_none_calendar():
+    engine = OptionsEngine()
+    ticker = _CalTicker(None)
+    assert engine._get_next_earnings(ticker) is None
+
+def test_get_next_earnings_exception_returns_none():
+    engine = OptionsEngine()
+    class BrokenTicker:
+        @property
+        def calendar(self):
+            raise RuntimeError("network error")
+    assert engine._get_next_earnings(BrokenTicker()) is None
+
+def test_earnings_warning_flag_near():
+    """Opportunity expiring within 5 days of earnings should be flagged."""
+    engine = OptionsEngine()
+    expiry_dt = date(2026, 8, 1)
+    earnings_dt = date(2026, 8, 3)  # 2 days after expiry
+    assert abs((expiry_dt - earnings_dt).days) <= 5
+
+def test_earnings_warning_flag_far():
+    """Opportunity expiring >5 days from earnings should not be flagged."""
+    engine = OptionsEngine()
+    expiry_dt = date(2026, 8, 1)
+    earnings_dt = date(2026, 8, 10)  # 9 days after expiry
+    assert abs((expiry_dt - earnings_dt).days) > 5

@@ -15,7 +15,7 @@ import time
 import pandas as pd
 import yfinance as yf
 
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from trade_advisor import StrategyEngine
 from market_data.provider import calculate_rsi, _yf_semaphore
@@ -119,6 +119,7 @@ class OptionsEngine:
             if not expirations:
                 return []
 
+            earnings_date = self._get_next_earnings(ticker)
             opportunities = []
 
             # -----------------------------------
@@ -139,6 +140,12 @@ class OptionsEngine:
             ]
 
             for i, (expiry, dte) in enumerate(valid_expirations):
+
+                expiry_date_obj = datetime.strptime(expiry, "%Y-%m-%d").date()
+                near_earnings = (
+                    earnings_date is not None
+                    and abs((expiry_date_obj - earnings_date).days) <= 5
+                )
 
                 if i > 0:
                     time.sleep(1)
@@ -248,6 +255,8 @@ class OptionsEngine:
                             "oi": oi,
                             "score": score,
                             "recommendation": self._label(score),
+                            "earnings_warning": near_earnings,
+                            "earnings_date": earnings_date.strftime("%Y-%m-%d") if earnings_date else None,
                         })
 
                     except Exception:
@@ -266,6 +275,27 @@ class OptionsEngine:
         finally:
             self._option_chain_cache.clear()  # free DataFrames between scans
             _yf_semaphore.release()
+
+    # -----------------------------------
+    # Earnings Date Fetcher
+    # -----------------------------------
+    def _get_next_earnings(self, ticker):
+        try:
+            cal = ticker.calendar
+            if not cal:
+                return None
+            earnings = cal.get("Earnings Date")
+            if not earnings:
+                return None
+            # yfinance returns a list of date objects
+            dt = earnings[0] if isinstance(earnings, (list, tuple)) else earnings
+            if isinstance(dt, date):
+                return dt
+            if isinstance(dt, str):
+                return datetime.strptime(dt[:10], "%Y-%m-%d").date()
+            return None
+        except Exception:
+            return None
 
     # -----------------------------------
     # Expiration Fetcher

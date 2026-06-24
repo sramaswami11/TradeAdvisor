@@ -29,6 +29,7 @@
         .good { color: #2a7; font-weight: bold; }
         .ok { color: orange; font-weight: bold; }
         .weak { color: red; font-weight: bold; }
+        .earnings-warn { color: #c85000; font-size: 0.75em; font-weight: bold; vertical-align: middle; }
 
         a {
             text-decoration: none;
@@ -59,13 +60,14 @@
         <th>Distance%</th>
         <th>Delta</th>
         <th>OI</th>
+        <th>Earnings</th>
         <th>Score</th>
     </tr>
 
     {% for o in opportunities %}
     <tr>
         <td>${{ o.strike }}</td>
-        <td>{{ o.expiry }}</td>
+        <td>{{ o.expiry }}{% if o.earnings_warning %} <span class="earnings-warn" title="Expiry near earnings date">⚠ EARN</span>{% endif %}</td>
         <td>{{ o.dte }}</td>
         <td>{% if o.bid > 0 %}${{ o.bid }}{% else %}—{% endif %}</td>
         <td>{% if o.ask > 0 %}${{ o.ask }}{% else %}—{% endif %}</td>
@@ -73,6 +75,7 @@
         <td>{{ o.distance_pct }}%</td>
         <td>{% if o.delta is not none %}{{ o.delta }}{% else %}—{% endif %}</td>
         <td>{{ "{:,}".format(o.oi) }}</td>
+        <td>{% if o.earnings_date %}{% if o.earnings_warning %}<span class="earnings-warn">{{ o.earnings_date }}</span>{% else %}{{ o.earnings_date }}{% endif %}{% else %}—{% endif %}</td>
         <td class="{{ o.recommendation|lower }}">{{ o.score }} {{ o.recommendation }}</td>
     </tr>
     {% endfor %}
