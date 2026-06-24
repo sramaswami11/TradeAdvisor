@@ -19,7 +19,7 @@ from datetime import datetime, date, timedelta
 
 from trade_advisor import StrategyEngine
 from market_data.provider import calculate_rsi, _yf_semaphore
-from database import get_cache, set_cache
+from database import get_cache, set_cache, record_iv, get_iv_rank
 
 
 # ------------------------------------
@@ -121,6 +121,8 @@ class OptionsEngine:
 
             earnings_date = self._get_next_earnings(ticker)
             opportunities = []
+            atm_iv = None
+            atm_iv_distance = float("inf")
 
             # -----------------------------------
             # Filter to valid DTE window
@@ -184,6 +186,13 @@ class OptionsEngine:
                         last = 0 if pd.isna(last) else float(last)
                         oi = 0 if pd.isna(oi) else int(oi)
                         iv = 0.0 if pd.isna(iv) else float(iv)
+
+                        # Track ATM IV (strike closest to price with valid IV)
+                        if iv > 0:
+                            dist = abs(strike - price)
+                            if dist < atm_iv_distance:
+                                atm_iv = iv
+                                atm_iv_distance = dist
 
                         # -----------------------------------
                         # Premium calculation
@@ -261,6 +270,15 @@ class OptionsEngine:
 
                     except Exception:
                         pass
+
+            if atm_iv:
+                record_iv(symbol, atm_iv)
+
+            iv_rank_data = get_iv_rank(symbol)
+            iv_rank = iv_rank_data["iv_rank"] if iv_rank_data else None
+
+            for opp in opportunities:
+                opp["iv_rank"] = iv_rank
 
             return sorted(
                 opportunities,

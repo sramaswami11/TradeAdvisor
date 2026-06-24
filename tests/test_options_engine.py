@@ -101,6 +101,7 @@ def test_csp_engine_returns_results(monkeypatch):
     assert r["score"] > 0
     assert "earnings_warning" in r
     assert r["earnings_warning"] is False  # earnings 60 days out in mock
+    assert "iv_rank" in r  # None until enough history accumulates
 
 
 def test_csp_engine_filters_bad_trend(monkeypatch):

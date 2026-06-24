@@ -30,6 +30,10 @@
         .ok { color: orange; font-weight: bold; }
         .weak { color: red; font-weight: bold; }
         .earnings-warn { color: #c85000; font-size: 0.75em; font-weight: bold; vertical-align: middle; }
+        .ivr-high { color: green; font-weight: bold; }
+        .ivr-mid { color: orange; font-weight: bold; }
+        .ivr-low { color: #999; }
+        .ivr-na { color: #bbb; }
     </style>
 </head>
 <body>
@@ -48,6 +52,7 @@
         <th>Distance%</th>
         <th>Delta</th>
         <th>OI</th>
+        <th>IV Rank</th>
         <th>Earnings</th>
         <th>Score</th>
     </tr>
@@ -64,6 +69,7 @@
         <td>{{ opp.distance_pct }}%</td>
         <td>{% if opp.delta is not none %}{{ opp.delta }}{% else %}—{% endif %}</td>
         <td>{{ "{:,}".format(opp.oi) }}</td>
+        <td>{% set ivr = opp.iv_rank | default(none) %}{% if ivr is not none %}<span class="{{ 'ivr-high' if ivr >= 50 else ('ivr-mid' if ivr >= 30 else 'ivr-low') }}">{{ ivr | int }}</span>{% else %}<span class="ivr-na" title="Accumulating IV history">—</span>{% endif %}</td>
         <td>{% if opp.earnings_date %}{% if opp.earnings_warning %}<span class="earnings-warn">{{ opp.earnings_date }}</span>{% else %}{{ opp.earnings_date }}{% endif %}{% else %}—{% endif %}</td>
         <td class="{{ opp.recommendation|lower }}">{{ opp.score }} {{ opp.recommendation }}</td>
     </tr>

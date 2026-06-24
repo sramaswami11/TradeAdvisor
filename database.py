@@ -71,6 +71,14 @@ def init_db():
         )
     """)
 
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS iv_history (
+            symbol TEXT NOT NULL,
+            iv FLOAT NOT NULL,
+            recorded_at FLOAT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -236,3 +244,75 @@ def set_cache(key: str, value: str, timestamp: float):
         conn.close()
     except Exception as ex:
         print(f"DB CACHE SET ERROR ({key}):", ex)
+
+
+# =========================
+# IV History
+# =========================
+_IV_HISTORY_WINDOW = 365 * 86400  # 52 weeks
+_IV_RANK_MIN_SAMPLES = 5
+
+
+def record_iv(symbol: str, iv: float):
+    import time
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute(
+            f"INSERT INTO iv_history (symbol, iv, recorded_at) VALUES ({_P}, {_P}, {_P})",
+            (symbol.upper(), iv, time.time())
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def get_iv_rank(symbol: str):
+    import time
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        cutoff = time.time() - _IV_HISTORY_WINDOW
+        c.execute(
+            f"""
+            SELECT MIN(iv), MAX(iv), COUNT(*), MAX(iv) - MIN(iv)
+            FROM iv_history
+            WHERE symbol = {_P} AND iv > 0 AND recorded_at > {_P}
+            """,
+            (symbol.upper(), cutoff)
+        )
+        row = c.fetchone()
+        conn.close()
+
+        if not row or row[2] < _IV_RANK_MIN_SAMPLES:
+            return None
+
+        min_iv, max_iv, count, iv_range = row
+
+        if iv_range <= 0:
+            return None
+
+        # Fetch the most recent IV reading for this symbol
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute(
+            f"""
+            SELECT iv FROM iv_history
+            WHERE symbol = {_P} AND iv > 0
+            ORDER BY recorded_at DESC LIMIT 1
+            """,
+            (symbol.upper(),)
+        )
+        latest = c.fetchone()
+        conn.close()
+
+        if not latest:
+            return None
+
+        current_iv = latest[0]
+        iv_rank = (current_iv - min_iv) / iv_range * 100
+        return {"iv_rank": round(iv_rank, 1), "sample_count": count}
+
+    except Exception:
+        return None
