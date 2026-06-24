@@ -2,6 +2,109 @@
 
 ---
 
+## Session: 2026-06-23
+
+### 1. Test Suite — Built and Fixed (54 tests passing)
+
+**Context:** CLAUDE_NOTES from 2026-06-22 noted zero tests existed. Tests were written but had 8 broken/erroring tests on first run.
+
+**Bugs fixed in existing tests:**
+- `DB_PATH` → `_DB_PATH` monkeypatch in `test_database.py`, `test_app_auth.py`, `test_admin_upload.py` (attribute name mismatch)
+- `MockTicker.history()` lacked `**kwargs` — `auto_adjust=True` caused silent `TypeError` → 21s retry loop → empty results
+- Hardcoded past expiry date `"2026-06-20"` in mock; switched to `datetime.now() + timedelta(days=7)`
+- `"premium"` key assertion replaced with `"bid"`/`"ask"` (key removed from result dict in prior session)
+
+**New coverage added:**
+- `conftest.py` — sets `FLASK_SECRET_KEY` as safety net for CI (removed EODHD_API_KEY line later when EODHD was dropped)
+- `test_options_engine.py` — 15 pure-method tests: `_put_delta` (6), `_score_csp` (3), `_label` (4), `_days_to_expiry` (2), `_build_indicator_data_from_hist` (3)
+- `test_database.py` — 4 new tests: `get_user_by_id`, ticker idempotency, `set_cache`/`get_cache` round-trip, cache miss
+- `tests/test_provider.py` — new file, 10 tests: `calculate_rsi` (5), `safe_float` (5)
+
+**Commits:** `5c19265`
+
+---
+
+### 2. P1 — Replace EODHD with yfinance for Dashboard Prices — DONE
+
+**Problem:** EODHD gives end-of-day prices only — dashboard showed yesterday's close during market hours.
+
+**Fix:** Rewrote `market_data/provider.py` — `fetch_snapshot` now uses `yf.Ticker(symbol).history(period="1y", auto_adjust=True)`, the same call the CSP scanner already makes. Prices now update intraday.
+
+**Changes:**
+- Removed EODHD HTTP call and API key dependency entirely
+- Snapshot cache TTL reduced from 4h → 15min
+- Added `change_pct` (today vs prev close) and `as_of` date to snapshot dict
+- Moved shared `_yf_semaphore` from `options_engine.py` into `provider.py` so both dashboard fetches and CSP scanner share one concurrency gate
+- `build_row` in `app.py` passes `change_pct`, `rsi`, `as_of` to template
+- Dashboard now shows: **Change% column** (green/red), **RSI column** (green if ≤30 oversold, red if ≥70 overbought), data freshness note below table
+- Added "Top CSP Opportunities" nav link in dashboard header
+
+**Commit:** `a4fd2b3`
+
+---
+
+### 3. P1b — Personalize Top CSP from User Watchlists — DONE
+
+**Problem:** `top_csp.py` had a hardcoded `WATCHLIST = ["HOOD", "SOFI", "GDX", "DAL", "IBKR", "SPY", "NVDA", "XLE"]` independent of any user's actual tickers.
+
+**Fix:**
+- Added `get_all_tickers()` to `database.py` — returns `DISTINCT symbol` across all `user_tickers`
+- `_do_scan()` in `top_csp.py` now calls `get_all_tickers()` each hourly cycle; falls back to `_DEFAULT_WATCHLIST = ["AAPL", "MSFT", "NVDA", "SPY"]` if DB is empty (fresh deploy)
+- Removed hardcoded `WATCHLIST` constant
+
+**Commit:** `e23d9b8`
+
+---
+
+### 4. Admin Clear-Cache Route — DONE
+
+**Problem:** After P1b deploy, Top CSP still showed old results because PostgreSQL `cache` table had a stale `top_csp_cache` entry. Render free tier has no shell access to run SQL directly.
+
+**Fix:** Added `/admin/clear-cache` route (admin-only, login-gated) that writes `[]` to `top_csp_cache` in the DB, forcing the background thread's next write to use the real watchlist.
+
+**Note:** URL is `/admin/clear-cache` (not `/admin/cache-clear` — easy to mix up).
+
+**Commit:** `515e13a`
+
+---
+
+## Commits This Session (2026-06-23)
+- `5c19265` — Add test suite: fix 8 broken tests and fill coverage gaps (54 passing)
+- `a4fd2b3` — P1: Replace EODHD with yfinance for dashboard price snapshots
+- `e23d9b8` — P1b: Personalize Top CSP from user watchlists instead of hardcoded list
+- `515e13a` — Add /admin/clear-cache route to wipe stale top_csp_cache from browser
+
+---
+
+## Pending for Next Session
+
+### P2 — IV Rank / IV Percentile
+**Why:** Without IV Rank, a "22% annualized" CSP could be normal noise or genuinely elevated premium — the user can't tell. IV Rank is the primary signal for CSP selling.
+
+**Plan:**
+1. Add `iv_history` table to DB: `(symbol TEXT, iv FLOAT, recorded_at FLOAT)`
+2. Record IV readings from the options scanner on each scan run (already fetching `impliedVolatility` per strike — take the median or ATM IV per symbol)
+3. Compute IV Rank = `(current_iv - 52w_low_iv) / (52w_high_iv - 52w_low_iv) * 100`
+4. Show IV Rank alongside score in CSP results and Top CSP page
+5. Gets better over time as more readings accumulate in the DB
+
+### P3 — Earnings Blackout
+**Why:** App could recommend selling a CSP that expires after an earnings release — high-risk situation that should be flagged.
+
+**Plan:**
+- Use `yfinance ticker.calendar` to get next earnings date
+- Flag any CSP where expiry is within 5 days of earnings with a warning or suppress it
+
+### P4 — Top Covered Calls Page
+**Why:** Natural companion to Top CSP. Covered calls share ~80% of the CSP scanner code (same chain fetch, reversed direction — scan calls instead of puts, delta ~0.25–0.30, slightly OTM).
+
+**Sequence after P2 + P3:** IV Rank and earnings awareness make both CSP and CC recommendations meaningfully better.
+
+### P5 — UI Polish / Mobile Responsive
+Bootstrap grid, cleaner typography, score badges.
+
+---
+
 ## Session: 2026-06-22
 
 ### 1. Watchlist Blown Away on Render — Diagnosed
