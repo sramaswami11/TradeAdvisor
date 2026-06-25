@@ -22,6 +22,12 @@
 
     <h1 class="page-title">Top CSP Opportunities</h1>
 
+    {% if guest %}
+    <div class="guest-banner">
+        Viewing as Guest (Mag 7) &mdash; <a href="{{ url_for('login') }}">Sign in</a> to see opportunities across your full watchlist
+    </div>
+    {% endif %}
+
     <div class="table-wrap">
         <table>
             <thead>

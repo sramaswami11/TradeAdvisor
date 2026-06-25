@@ -372,11 +372,15 @@ def top_csp():
     if not is_authenticated():
         return redirect(url_for("login"))
 
+    is_guest = bool(session.get("guest"))
     opportunities = get_top_csp_opportunities()
+    if is_guest:
+        opportunities = [o for o in opportunities if o.get("symbol") in MAG7]
 
     return render_template(
         "top_csp.html",
-        opportunities=opportunities
+        opportunities=opportunities,
+        guest=is_guest,
     )
 
 
@@ -409,11 +413,15 @@ def top_cc():
     if not is_authenticated():
         return redirect(url_for("login"))
 
+    is_guest = bool(session.get("guest"))
     opportunities = get_top_cc_opportunities()
+    if is_guest:
+        opportunities = [o for o in opportunities if o.get("symbol") in MAG7]
 
     return render_template(
         "top_cc.html",
-        opportunities=opportunities
+        opportunities=opportunities,
+        guest=is_guest,
     )
 
 
