@@ -13,7 +13,11 @@
     <nav>
         <a href="{{ url_for('top_csp') }}" class="nav-link">Top CSP</a>
         <a href="{{ url_for('top_cc') }}"  class="nav-link">Top CC</a>
-        <a href="{{ url_for('logout') }}"  class="nav-link muted">Logout</a>
+        {% if session.get('guest') %}
+        <a href="{{ url_for('login') }}"  class="nav-link">Sign in</a>
+        {% else %}
+        <a href="{{ url_for('logout') }}" class="nav-link muted">Logout</a>
+        {% endif %}
     </nav>
 </header>
 
