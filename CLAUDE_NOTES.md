@@ -6,6 +6,72 @@
 
 ### 1. P3 — Earnings Blackout — DONE
 
+*(See commit `0d402af` — already documented below)*
+
+---
+
+### 2. Earnings Date Column Added
+
+**Problem:** `earnings_warning` flag existed but the actual earnings date was never shown in the UI. User couldn't see when earnings were without knowing to look elsewhere.
+
+**Fix:** Added `earnings_date` field to every opportunity dict. Both `csp_results.html` and `top_csp.html` now show an Earnings column — date is orange when near-expiry flagged, plain text otherwise, `—` if unavailable.
+
+**Commit:** `0d402af`
+
+---
+
+### 3. P2 — IV Rank — DONE
+
+**Why:** Without IV Rank, a "22% annualized" CSP could be normal noise or genuinely elevated premium — user can't tell if it's worth selling.
+
+**Implementation:**
+- `database.py`: Added `iv_history(symbol TEXT, iv FLOAT, recorded_at FLOAT)` table to `init_db()`. Added `record_iv(symbol, iv)` (insert) and `get_iv_rank(symbol)` — queries last 52 weeks, returns `{"iv_rank": float, "sample_count": int}` or `None` if < 5 samples.
+- `options_engine.py`: During the contract loop, tracks the strike with IV closest to ATM (`atm_iv`). After the expiry loop: calls `record_iv`, then `get_iv_rank`, stamps `iv_rank` onto every opportunity for that symbol.
+- Both CSP and CC templates: IV Rank column between OI and Earnings. Green ≥ 50 (elevated, good to sell), orange 30–49 (neutral), gray < 30 (low), `—` while accumulating (< 5 readings).
+- IV Rank is **display-only** — does not affect score yet. Validate the signal first.
+
+**Data accumulation:** Shows `—` until 5 hourly scan readings exist per symbol (~5 hours). Becomes meaningful after ~1 week.
+
+**Test coverage:** 4 new DB tests — `test_record_and_rank_iv`, `test_iv_rank_insufficient_data_returns_none`, `test_iv_rank_flat_iv_returns_none`, `test_iv_rank_unknown_symbol_returns_none`.
+
+**Commit:** `81e6f49`
+
+---
+
+### 4. P4 — Covered Calls — DONE
+
+**Implementation:**
+- `options_engine.py`: Refactored `find_csp_opportunities` body into `_find_opportunities(symbol, max_dte, side)`. Public methods are now one-liner wrappers. Added `find_cc_opportunities`. CC-specific logic: scans `chain.calls`, OTM window 0–10% above price, call delta 0.25–0.30, `_call_delta` (N(d1) without the `-1`), `_score_cc`.
+- CC scoring differs from CSP: **RSI overbought (+1)** is a positive signal (stock extended = good to cap gains), and distance rewards strike being further above price (more buffer before shares get called away).
+- `top_cc.py`: New file, exact mirror of `top_csp.py` — background thread, file + DB cache (`top_cc_cache`), same per-symbol slot guarantee.
+- `app.py`: `/cc/<symbol>` and `/top-cc` routes. Imported `get_top_cc_opportunities`.
+- `templates/cc_results.html` + `templates/top_cc.html`: New templates, identical columns to CSP counterparts.
+- `templates/dashboard.html`: "Top Covered Calls" nav link; "CC" column per ticker row linking to `/cc/<symbol>`.
+
+**All 64 tests passing.**
+
+**Commit:** `8a0ce71`
+
+---
+
+## Commits This Session (2026-06-24)
+- `0d402af` — P3: Flag CSPs expiring near earnings date with warning badge and date column
+- `81e6f49` — P2: Add IV Rank — record ATM IV per scan, display 0-100 rank alongside score
+- `8a0ce71` — P4: Add Covered Call scanner — /cc/<symbol>, /top-cc, background scan, CC scoring
+
+---
+
+## Pending for Next Session
+
+### P5 — UI Polish / Mobile Responsive
+Bootstrap grid, cleaner typography, score badges. Dashboard and results pages.
+
+---
+
+## Session: 2026-06-24 (earlier — P3 detail)
+
+### 1. P3 — Earnings Blackout — DONE
+
 **Problem:** Scanner could recommend selling a CSP that expires within days of an earnings release — high-risk situation where IV spikes pre-earnings and the stock can gap down violently.
 
 **Fix:** Added `_get_next_earnings(ticker)` to `OptionsEngine`:
