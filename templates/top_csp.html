@@ -1,87 +1,84 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Top CSP Opportunities</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            background: #f7f9fc;
-        }
-
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            background: white;
-        }
-
-        th, td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-            text-align: center;
-        }
-
-        th {
-            background: #f0f2f5;
-        }
-
-        .strong { color: green; font-weight: bold; }
-        .good { color: #2a7; font-weight: bold; }
-        .ok { color: orange; font-weight: bold; }
-        .weak { color: red; font-weight: bold; }
-        .earnings-warn { color: #c85000; font-size: 0.75em; font-weight: bold; vertical-align: middle; }
-        .ivr-high { color: green; font-weight: bold; }
-        .ivr-mid { color: orange; font-weight: bold; }
-        .ivr-low { color: #999; }
-        .ivr-na { color: #bbb; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Top CSP Opportunities – Trade Advisor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 
-<h1>Top CSP Opportunities</h1>
+<header class="site-header">
+    <a href="{{ url_for('dashboard') }}" class="brand">Trade Advisor</a>
+    <nav>
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('top_csp') }}" class="nav-link">Top CSP</a>
+        <a href="{{ url_for('top_cc') }}"  class="nav-link">Top CC</a>
+        <a href="{{ url_for('logout') }}"  class="nav-link muted">Logout</a>
+    </nav>
+</header>
 
-<table>
-    <tr>
-        <th>Symbol</th>
-        <th>Strike</th>
-        <th>Expiry</th>
-        <th>DTE</th>
-        <th>Bid</th>
-        <th>Ask</th>
-        <th>Ann%</th>
-        <th>Distance%</th>
-        <th>Delta</th>
-        <th>OI</th>
-        <th>IV Rank</th>
-        <th>Earnings</th>
-        <th>Score</th>
-    </tr>
+<div class="container">
 
-    {% for opp in opportunities %}
-    <tr>
-        <td>{{ opp.symbol }}</td>
-        <td>${{ opp.strike }}</td>
-        <td>{{ opp.expiry }}{% if opp.earnings_warning %} <span class="earnings-warn" title="Expiry near earnings date">⚠ EARN</span>{% endif %}</td>
-        <td>{{ opp.dte }}</td>
-        <td>{% if opp.bid > 0 %}${{ opp.bid }}{% else %}—{% endif %}</td>
-        <td>{% if opp.ask > 0 %}${{ opp.ask }}{% else %}—{% endif %}</td>
-        <td>{{ opp.annualized }}%</td>
-        <td>{{ opp.distance_pct }}%</td>
-        <td>{% if opp.delta is not none %}{{ opp.delta }}{% else %}—{% endif %}</td>
-        <td>{{ "{:,}".format(opp.oi) }}</td>
-        <td>{% set ivr = opp.iv_rank | default(none) %}{% if ivr is not none %}<span class="{{ 'ivr-high' if ivr >= 50 else ('ivr-mid' if ivr >= 30 else 'ivr-low') }}">{{ ivr | int }}</span>{% else %}<span class="ivr-na" title="Accumulating IV history">—</span>{% endif %}</td>
-        <td>{% if opp.earnings_date %}{% if opp.earnings_warning %}<span class="earnings-warn">{{ opp.earnings_date }}</span>{% else %}{{ opp.earnings_date }}{% endif %}{% else %}—{% endif %}</td>
-        <td class="{{ opp.recommendation|lower }}">{{ opp.score }} {{ opp.recommendation }}</td>
-    </tr>
-    {% else %}
-    <tr>
-        <td colspan="11" style="text-align:center; padding:12px; color:#666;">
-            Scan in progress — check back in a minute.
-        </td>
-    </tr>
-    {% endfor %}
+    <h1 class="page-title">Top CSP Opportunities</h1>
 
-</table>
+    <div class="table-wrap">
+        <table>
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Strike</th>
+                    <th>Expiry</th>
+                    <th>DTE</th>
+                    <th>Bid</th>
+                    <th>Ask</th>
+                    <th>Ann%</th>
+                    <th>Distance%</th>
+                    <th>Delta</th>
+                    <th>OI</th>
+                    <th>IV Rank</th>
+                    <th>Earnings</th>
+                    <th>Score</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for opp in opportunities %}
+                <tr>
+                    <td><strong>{{ opp.symbol }}</strong></td>
+                    <td>${{ opp.strike }}</td>
+                    <td>{{ opp.expiry }}{% if opp.earnings_warning %} <span class="earnings-warn" title="Expiry near earnings date">⚠ EARN</span>{% endif %}</td>
+                    <td>{{ opp.dte }}</td>
+                    <td>{% if opp.bid > 0 %}${{ opp.bid }}{% else %}—{% endif %}</td>
+                    <td>{% if opp.ask > 0 %}${{ opp.ask }}{% else %}—{% endif %}</td>
+                    <td>{{ opp.annualized }}%</td>
+                    <td>{{ opp.distance_pct }}%</td>
+                    <td>{% if opp.delta is not none %}{{ opp.delta }}{% else %}—{% endif %}</td>
+                    <td>{{ "{:,}".format(opp.oi) }}</td>
+                    <td>
+                        {% set ivr = opp.iv_rank | default(none) %}
+                        {% if ivr is not none %}
+                            <span class="{{ 'ivr-high' if ivr >= 50 else ('ivr-mid' if ivr >= 30 else 'ivr-low') }}">{{ ivr | int }}</span>
+                        {% else %}
+                            <span class="ivr-na" title="Accumulating IV history">—</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if opp.earnings_date %}
+                            {% if opp.earnings_warning %}<span class="earnings-warn">{{ opp.earnings_date }}</span>{% else %}{{ opp.earnings_date }}{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td><span class="badge badge-{{ opp.recommendation|lower }}">{{ opp.score }} {{ opp.recommendation }}</span></td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="13" class="empty-state">Scan in progress — check back in a minute.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+</div>
 
 </body>
 </html>

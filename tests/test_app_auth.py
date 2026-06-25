@@ -26,7 +26,7 @@ def test_login_flow(client):
     }, follow_redirects=True)
 
     assert response.status_code == 200
-    assert b"Tickers for" in response.data
+    assert b"Watchlist" in response.data
 
 
 def test_requires_login_for_dashboard(client):

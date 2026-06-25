@@ -1,0 +1,283 @@
+/* Trade Advisor — shared stylesheet */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0;
+    background: #f7f9fc;
+    color: #1a1a2e;
+    font-size: 14px;
+    line-height: 1.5;
+}
+
+/* ── Header ─────────────────────────────────── */
+.site-header {
+    background: white;
+    padding: 0 32px;
+    border-bottom: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    height: 54px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+.brand {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1a1a2e;
+    text-decoration: none;
+    letter-spacing: -0.3px;
+}
+
+.site-header nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.nav-link {
+    color: #4a6cf7;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 14px;
+}
+.nav-link:hover { color: #3b5be3; }
+.nav-link.muted { color: #777; font-weight: 400; }
+.nav-link.muted:hover { color: #444; }
+
+/* ── Container ───────────────────────────────── */
+.container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 28px 32px;
+}
+
+.page-title {
+    font-size: 19px;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin: 0 0 20px;
+    letter-spacing: -0.3px;
+}
+
+/* ── Table ───────────────────────────────────── */
+.table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    background: white;
+    min-width: 720px;
+}
+
+th, td {
+    padding: 11px 12px;
+    text-align: center;
+    border-bottom: 1px solid #eef0f3;
+    white-space: nowrap;
+}
+
+th {
+    background: #f6f8fb;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #666;
+}
+
+tbody tr:hover { background: #fafbfd; }
+tbody tr:last-child td { border-bottom: none; }
+
+/* ── Score badges ────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+.badge-strong { background: #d4f0dd; color: #1a6b34; }
+.badge-good   { background: #e0f5eb; color: #237a43; }
+.badge-ok     { background: #fff3cd; color: #856404; }
+.badge-weak   { background: #fde8e8; color: #b91c1c; }
+
+/* ── Signal colours ──────────────────────────── */
+.positive       { color: #1a6b34; font-weight: 600; }
+.negative       { color: #b91c1c; font-weight: 600; }
+.rsi-oversold   { color: #1a6b34; font-weight: 700; }
+.rsi-overbought { color: #b91c1c; font-weight: 700; }
+.buy  { color: #1a6b34; font-weight: 700; }
+.sell { color: #b91c1c; font-weight: 700; }
+.hold { color: #856404; font-weight: 700; }
+
+/* IV Rank */
+.ivr-high { color: #1a6b34; font-weight: 600; }
+.ivr-mid  { color: #856404; font-weight: 600; }
+.ivr-low  { color: #aaa; }
+.ivr-na   { color: #ccc; }
+
+/* Earnings warning */
+.earnings-warn {
+    color: #c85000;
+    font-size: 0.78em;
+    font-weight: 700;
+    vertical-align: middle;
+}
+
+/* ── Dashboard-specific ──────────────────────── */
+.action-link { color: #4a6cf7; text-decoration: none; font-weight: 500; }
+.action-link:hover { color: #3b5be3; }
+
+.remove { color: #d1242f; font-size: 16px; text-decoration: none; }
+
+.add-box {
+    background: white;
+    padding: 12px 14px;
+    border-radius: 8px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    width: fit-content;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    margin-bottom: 20px;
+}
+
+.add-box input {
+    padding: 8px 10px;
+    font-size: 14px;
+    width: 200px;
+    border-radius: 6px;
+    border: 1px solid #d0d5dd;
+    font-family: inherit;
+    color: inherit;
+}
+.add-box input:focus {
+    outline: none;
+    border-color: #4a6cf7;
+    box-shadow: 0 0 0 3px rgba(74,108,247,0.12);
+}
+
+.add-box button {
+    padding: 8px 16px;
+    background: #4a6cf7;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: inherit;
+}
+.add-box button:hover { background: #3b5be3; }
+
+/* ── Rationale panel ─────────────────────────── */
+.panel {
+    margin-top: 24px;
+    padding: 20px 24px;
+    background: white;
+    border-radius: 10px;
+    border-left: 4px solid #4a6cf7;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+.panel h3 { margin: 0 0 12px; font-size: 16px; }
+
+pre {
+    white-space: pre-wrap;
+    margin: 0;
+    font-family: inherit;
+    font-size: 14px;
+}
+
+.freshness-note { margin-top: 12px; font-size: 12px; color: #999; }
+
+.empty-state {
+    text-align: center;
+    padding: 40px 16px;
+    color: #888;
+    font-size: 14px;
+}
+
+/* ── Login card ──────────────────────────────── */
+.login-body {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #eef2ff, #f7f9fc);
+}
+
+.card {
+    background: white;
+    width: 380px;
+    padding: 36px 32px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.card h2 {
+    margin: 0 0 6px;
+    text-align: center;
+    font-size: 22px;
+    letter-spacing: -0.4px;
+}
+.card .subtitle {
+    text-align: center;
+    color: #777;
+    font-size: 14px;
+    margin-bottom: 28px;
+}
+.card input {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: 1px solid #d0d5dd;
+    margin-bottom: 14px;
+    font-family: inherit;
+    color: inherit;
+}
+.card input:focus {
+    outline: none;
+    border-color: #4a6cf7;
+    box-shadow: 0 0 0 3px rgba(74,108,247,0.12);
+}
+.card button {
+    width: 100%;
+    padding: 12px;
+    font-size: 15px;
+    font-weight: 600;
+    background: #4a6cf7;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+}
+.card button:hover { background: #3b5be3; }
+.card .footer {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 12px;
+    color: #aaa;
+}
+
+/* ── Responsive ──────────────────────────────── */
+@media (max-width: 768px) {
+    .site-header { padding: 0 16px; }
+    .site-header nav { gap: 12px; }
+    .container { padding: 16px; }
+    .add-box { width: 100%; }
+    .add-box input { flex: 1; width: auto; min-width: 0; }
+}

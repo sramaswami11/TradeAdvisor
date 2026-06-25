@@ -2,6 +2,26 @@
 
 ---
 
+## Session: 2026-06-25
+
+### P5 — UI Polish / Mobile Responsive — DONE
+
+**Changes:**
+- Created `static/style.css` — single shared stylesheet for all pages. Replaces per-template inline `<style>` blocks. Covers: sticky header/nav, table styling, score badges, signal colours (positive/negative, RSI, IV Rank, earnings), responsive breakpoints.
+- All 6 templates rewritten to use shared CSS:
+  - `login.html` — added viewport meta, links `style.css`, uses `.login-body` + `.card`
+  - `dashboard.html` — uses `.site-header`, `.container`, `.table-wrap`; heading changed to `{{ user.name }}'s Watchlist`
+  - `top_csp.html` / `top_cc.html` — now have a proper header with nav links (previously had none); wrapped in `.container` + `.table-wrap`; score badges
+  - `csp_results.html` / `cc_results.html` — same header pattern, score badges, removed standalone back link (brand logo in header links to dashboard)
+- Score column changed from plain colored text `"9 STRONG"` to pill badges: `<span class="badge badge-strong">9 STRONG</span>`
+- All tables wrapped in `<div class="table-wrap">` — `overflow-x: auto` on mobile
+- Sticky header on all data pages
+- `test_app_auth.py` updated: `"Tickers for"` → `"Watchlist"` to match new heading
+
+**64 tests passing.**
+
+---
+
 ## Session: 2026-06-24
 
 ### 1. P3 — Earnings Blackout — DONE
