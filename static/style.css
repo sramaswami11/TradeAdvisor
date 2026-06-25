@@ -273,6 +273,31 @@ pre {
     color: #aaa;
 }
 
+/* ── Scan loading overlay ────────────────────── */
+.scan-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(247, 249, 252, 0.92);
+    z-index: 200;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+}
+.scan-overlay.active { display: flex; }
+.scan-overlay p { color: #444; font-size: 15px; margin: 0; }
+
+.spinner {
+    width: 44px;
+    height: 44px;
+    border: 4px solid #e5e7eb;
+    border-top-color: #4a6cf7;
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ── Guest banner ────────────────────────────── */
 .guest-banner {
     background: #eef2ff;
