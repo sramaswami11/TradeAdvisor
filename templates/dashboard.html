@@ -21,10 +21,18 @@
 
     <h1 class="page-title">{{ user.name }}'s Watchlist</h1>
 
+    {% if guest %}
+    <div class="guest-banner">
+        Viewing as Guest (Mag 7) &mdash; <a href="{{ url_for('login') }}">Sign in</a> to save your own watchlist
+    </div>
+    {% endif %}
+
+    {% if not guest %}
     <form method="POST" class="add-box">
         <input type="text" name="symbol" placeholder="Add ticker (e.g. AAPL)" required>
         <button type="submit">Add</button>
     </form>
+    {% endif %}
 
     <div class="table-wrap">
         <table>
@@ -70,7 +78,7 @@
                     <td><a class="action-link" href="{{ url_for('dashboard', view=t.symbol) }}">View</a></td>
                     <td><a class="action-link" href="{{ url_for('view_csp', symbol=t.symbol) }}">CSP</a></td>
                     <td><a class="action-link" href="{{ url_for('view_cc',  symbol=t.symbol) }}">CC</a></td>
-                    <td><a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a></td>
+                    <td>{% if not guest %}<a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a>{% endif %}</td>
                 </tr>
                 {% endfor %}
             </tbody>

@@ -273,6 +273,43 @@ pre {
     color: #aaa;
 }
 
+/* ── Guest banner ────────────────────────────── */
+.guest-banner {
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    color: #3730a3;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 13px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.guest-banner a { color: #4a6cf7; font-weight: 600; text-decoration: none; }
+.guest-banner a:hover { color: #3b5be3; }
+
+/* ── Guest link on login card ────────────────── */
+.guest-link {
+    margin-top: 18px;
+    text-align: center;
+    padding-top: 16px;
+    border-top: 1px solid #eee;
+}
+.guest-link a {
+    color: #4a6cf7;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 14px;
+}
+.guest-link a:hover { color: #3b5be3; }
+.guest-link .hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: #aaa;
+}
+
 /* ── Responsive ──────────────────────────────── */
 @media (max-width: 768px) {
     .site-header { padding: 0 16px; }

@@ -38,10 +38,15 @@ if not app.secret_key:
     raise RuntimeError("FLASK_SECRET_KEY environment variable not set")
 
 DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]
+MAG7 = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
 
 # =========================
 # Helpers
 # =========================
+
+def is_authenticated() -> bool:
+    return "user_id" in session or bool(session.get("guest"))
+
 
 def normalize_symbol(symbol: str) -> str:
     return re.sub(r"[^A-Z0-9\.\-]", "", (symbol or "").upper())
@@ -177,7 +182,14 @@ def ensure_default_tickers_for_user(user_id: int):
 
 @app.route("/")
 def index():
-    return redirect(url_for("dashboard")) if "user_id" in session else redirect(url_for("login"))
+    return redirect(url_for("dashboard")) if is_authenticated() else redirect(url_for("login"))
+
+
+@app.route("/guest")
+def guest():
+    session.clear()
+    session["guest"] = True
+    return redirect(url_for("dashboard"))
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -205,22 +217,28 @@ def login():
 
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
 
-    user = get_user_by_id(session["user_id"])
+    is_guest = bool(session.get("guest"))
 
-    if not user:
-        session.clear()
-        return redirect(url_for("login"))
+    if is_guest:
+        user = {"id": None, "name": "Guest", "email": None}
+        symbols = MAG7
+    else:
+        user = get_user_by_id(session["user_id"])
+        if not user:
+            session.clear()
+            return redirect(url_for("login"))
 
-    if request.method == "POST":
-        symbol = normalize_symbol(request.form.get("symbol"))
-        if symbol:
-            add_ticker_to_user(user["id"], symbol)
-        return redirect(url_for("dashboard"))
+        if request.method == "POST":
+            symbol = normalize_symbol(request.form.get("symbol"))
+            if symbol:
+                add_ticker_to_user(user["id"], symbol)
+            return redirect(url_for("dashboard"))
 
-    symbols = get_tickers_for_user(user["id"])
+        symbols = get_tickers_for_user(user["id"])
+
     tickers = [build_row(sym) for sym in symbols]
 
     selected_rationale = None
@@ -232,22 +250,21 @@ def dashboard():
         "dashboard.html",
         tickers=tickers,
         selected_rationale=selected_rationale,
-        user=user
+        user=user,
+        guest=is_guest,
     )
 
 
 @app.route("/csp/<symbol>")
 def view_csp(symbol):
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
 
-    user = get_user_by_id(session["user_id"])
-
-    if not user:
-        session.clear()
-        return redirect(url_for("login"))
-
-    #engine = OptionsEngine()
+    if not session.get("guest"):
+        user = get_user_by_id(session["user_id"])
+        if not user:
+            session.clear()
+            return redirect(url_for("login"))
 
     try:
         opportunities = options_engine.find_csp_opportunities(symbol.upper())
@@ -258,15 +275,15 @@ def view_csp(symbol):
         "csp_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
-        user=user
     )
 
 
 @app.route("/remove/<symbol>")
 def remove_ticker(symbol):
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
-    remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
+    if not session.get("guest"):
+        remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
     return redirect(url_for("dashboard"))
 
 
@@ -352,7 +369,7 @@ def admin_upload_users():
 @app.route("/top-csp")
 def top_csp():
 
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
 
     opportunities = get_top_csp_opportunities()
@@ -365,14 +382,14 @@ def top_csp():
 
 @app.route("/cc/<symbol>")
 def view_cc(symbol):
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
 
-    user = get_user_by_id(session["user_id"])
-
-    if not user:
-        session.clear()
-        return redirect(url_for("login"))
+    if not session.get("guest"):
+        user = get_user_by_id(session["user_id"])
+        if not user:
+            session.clear()
+            return redirect(url_for("login"))
 
     try:
         opportunities = options_engine.find_cc_opportunities(symbol.upper())
@@ -383,14 +400,13 @@ def view_cc(symbol):
         "cc_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
-        user=user
     )
 
 
 @app.route("/top-cc")
 def top_cc():
 
-    if "user_id" not in session:
+    if not is_authenticated():
         return redirect(url_for("login"))
 
     opportunities = get_top_cc_opportunities()
