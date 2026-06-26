@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>CSP – {{ symbol }} – Trade Advisor</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 </head>
 <body>
 
@@ -78,6 +79,8 @@
     {% else %}
     <p class="empty-state">No suitable CSP opportunities found for {{ symbol }}.</p>
     {% endif %}
+
+    <p class="freshness-note">Data via Yahoo Finance · ~15 min delayed · verify with your broker before trading</p>
 
 </div>
 

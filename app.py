@@ -207,6 +207,7 @@ def login():
         update_user_name_if_missing(user["id"], name)
         user = get_user_by_email(email)
 
+        session.clear()
         session["user_id"] = user["id"]
         ensure_default_tickers_for_user(user["id"])
 
