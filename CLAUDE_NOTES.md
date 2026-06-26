@@ -4,7 +4,7 @@
 
 ## Session: 2026-06-25
 
-### P5 — UI Polish / Mobile Responsive — DONE
+### 1. P5 — UI Polish / Mobile Responsive — DONE
 
 **Changes:**
 - Created `static/style.css` — single shared stylesheet for all pages. Replaces per-template inline `<style>` blocks. Covers: sticky header/nav, table styling, score badges, signal colours (positive/negative, RSI, IV Rank, earnings), responsive breakpoints.
@@ -16,9 +16,73 @@
 - Score column changed from plain colored text `"9 STRONG"` to pill badges: `<span class="badge badge-strong">9 STRONG</span>`
 - All tables wrapped in `<div class="table-wrap">` — `overflow-x: auto` on mobile
 - Sticky header on all data pages
+- Dashboard link added to Top CSP and Top CC nav
 - `test_app_auth.py` updated: `"Tickers for"` → `"Watchlist"` to match new heading
 
-**64 tests passing.**
+**Commits:** `5ba5c8f`
+
+---
+
+### 2. Guest Mode — DONE
+
+**Why:** Friends demoing the app shouldn't need to provide an email or type credentials.
+
+**Implementation:**
+- `app.py`: Added `MAG7 = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]` constant. Added `is_authenticated()` helper (`user_id` in session OR `session.guest`). Added `/guest` route — clears session, sets `session["guest"] = True`, redirects to dashboard.
+- Dashboard with guest session: shows Mag 7 watchlist, hides add-ticker form and remove (✖) buttons, shows blue guest banner with "Sign in" nudge.
+- Top CSP / Top CC: results filtered to Mag 7 symbols when guest, same guest banner shown.
+- All 5 data templates: nav shows "Sign in → /login" instead of "Logout" when `session.get('guest')`. Uses Flask's `session` global in Jinja2 — no extra variable needed.
+- `login.html`: "Continue as Guest" link below form with "Mag 7 stocks · no sign-in needed" hint.
+- Guests have full access to per-symbol `/csp/<symbol>` and `/cc/<symbol>` scan pages.
+- `remove_ticker` silently redirects guests back to dashboard (no-op).
+
+**Commits:** `bf84828`, `d7bc77e`, `9cf5e6a`
+
+---
+
+### 3. Loading Spinner for Per-Symbol Scans — DONE
+
+**Why:** Per-symbol CSP/CC scans take 15–45s with no feedback. Friends thought the app was broken.
+
+**Fix:**
+- `static/style.css`: Added `.scan-overlay`, `.spinner`, `@keyframes spin`.
+- `dashboard.html`: Full-page overlay div (hidden by default). JS listens for clicks on `a[href^="/csp/"]` and `a[href^="/cc/"]`, shows overlay with "Scanning AAPL — CSP…" text. `pageshow` listener removes overlay on browser back-button bfcache restore.
+
+**Commit:** `34ceff9`
+
+---
+
+## Pending for Next Session (2026-06-26)
+
+### A — Data Disclaimer on Results Pages (quick)
+Add one line to `csp_results.html` and `cc_results.html`:
+`"Data via Yahoo Finance · ~15 min delayed · verify with your broker before trading"`
+- Yahoo options data is ~15 min delayed during market hours
+- Top CSP/CC background scan runs hourly, so those can be up to ~75 min stale
+- Disclaimer sets right expectation; makes app feel more credible
+
+### B — Favicon (quick)
+All tabs show blank icon. Simple `.ico` or SVG favicon in `static/`, linked from all templates (or via `<link>` in shared base if we add one).
+
+### C — Column tooltips / legend (optional, depends on audience)
+Friends unfamiliar with options won't know what Delta, IV Rank, or "8 STRONG" mean.
+Options: hover tooltips on `<th>` headers, or a small legend paragraph below the table.
+Skip if all friends are options-literate.
+
+### D — Better empty scan message (optional)
+Currently: "No suitable CSP opportunities found for AAPL."
+Better: "No contracts found in the 0.25–0.30 delta range expiring within 14 days."
+
+---
+
+## Data Quality Notes (for reference)
+
+- **Bid/ask on per-symbol scans**: fetched live from Yahoo Finance at scan time. Yahoo is ~15 min delayed during market hours. `_option_chain_cache` has 30-min TTL but is cleared after every scan, so each user click fetches fresh from Yahoo.
+- **Top CSP/CC**: background scanner runs hourly. Results up to ~60 min old + Yahoo's 15-min delay = ~75 min worst case.
+- **IV Rank**: accumulates from hourly scan readings. Shows `—` until 5 readings per symbol. Meaningful after ~1 week. Not suitable for real trading decisions yet.
+- **Expiration dates**: cached 24h (they don't change intraday).
+- **OTM strikes with low OI**: bid/ask can be stale on Yahoo regardless of app caching. `ask * 0.95` fallback used when bid = 0.
+- **ThinkorSwim/Schwab API**: would improve data quality but migration is substantial. Not worth doing until user feedback validates the tool.
 
 ---
 
