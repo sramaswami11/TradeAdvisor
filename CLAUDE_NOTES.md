@@ -2,6 +2,65 @@
 
 ---
 
+## Session: 2026-06-26
+
+### 1. Data Disclaimer on Results Pages — DONE
+
+**Why:** Yahoo options data is ~15 min delayed during market hours. Per-symbol scans fetch live from Yahoo (~15 min lag). Top CSP/CC background scan runs hourly, so worst case ~75 min stale. Disclaimer sets right expectation and makes the app feel more credible to friends.
+
+**Fix:** Reused existing `.freshness-note` CSS class (12px, gray). Added a `<p class="freshness-note">` below each results table:
+- `csp_results.html` / `cc_results.html`: "Data via Yahoo Finance · ~15 min delayed · verify with your broker before trading"
+- `top_csp.html` / `top_cc.html`: "Data via Yahoo Finance · up to ~75 min delayed (hourly scan + Yahoo delay) · verify with your broker before trading"
+
+**Commits:** `0b3505b`
+
+---
+
+### 2. Favicon — DONE
+
+**Why:** All browser tabs showed a blank icon.
+
+**Implementation:**
+- Started with `static/favicon.svg` (blue trend-line SVG), but SVG favicons aren't reliably picked up by all browsers/tabs.
+- Switched to `static/favicon.png` — 32×32 blue square (#4a6cf7), generated via Python stdlib (`struct` + `zlib`, no PIL needed).
+- Added `<link rel="icon" type="image/png">` to all 6 templates (`login.html`, `dashboard.html`, `csp_results.html`, `cc_results.html`, `top_csp.html`, `top_cc.html`).
+- Added `/favicon.ico` Flask route (`app.send_static_file("favicon.png")`) — browsers that probe the root URL for a favicon also find it.
+
+**Commits:** `0b3505b`, `7f7840e`
+
+---
+
+### 3. Guest Session Persisting After Login — FIXED
+
+**Bug:** If a user visited as guest first (`session["guest"] = True`), then signed in with name/email, the dashboard still showed guest mode. Root cause: the `/login` POST handler set `session["user_id"]` without clearing the existing session, so `guest` flag persisted alongside `user_id`. The dashboard check `is_guest = bool(session.get("guest"))` picked up the stale flag.
+
+**Fix (two layers):**
+- `app.py` login route: `session.clear()` before `session["user_id"] = user["id"]` — prevents the bleed-through on new logins.
+- `app.py` dashboard route: `session.pop("guest", None)` whenever `user_id` is in session — heals stale cookies already out in the wild without requiring a logout.
+
+**Commits:** `0b3505b`, `7f7840e`
+
+---
+
+## Pending for Next Session
+
+### C — Column Tooltips / Legend (optional)
+Friends unfamiliar with options won't know what Delta, IV Rank, or "8 STRONG" mean.
+Options: hover tooltips on `<th>` headers, or a small legend paragraph below the table.
+Skip if all friends are options-literate.
+
+### D — Better Empty Scan Message (optional)
+Currently: "No suitable CSP opportunities found for AAPL."
+Better: "No contracts found in the 0.25–0.30 delta range expiring within 14 days."
+
+---
+
+## Commits This Session (2026-06-26)
+- `0b3505b` — Add favicon, data disclaimers, and fix guest session persisting after login
+- `7f7840e` — Fix favicon (PNG), /favicon.ico route, and guest session bleed-through
+
+---
+
 ## Session: 2026-06-25
 
 ### 1. P5 — UI Polish / Mobile Responsive — DONE
