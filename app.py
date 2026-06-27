@@ -180,6 +180,11 @@ def ensure_default_tickers_for_user(user_id: int):
 # Routes
 # =========================
 
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.png")
+
+
 @app.route("/")
 def index():
     return redirect(url_for("dashboard")) if is_authenticated() else redirect(url_for("login"))
@@ -220,6 +225,9 @@ def login():
 def dashboard():
     if not is_authenticated():
         return redirect(url_for("login"))
+
+    if "user_id" in session:
+        session.pop("guest", None)
 
     is_guest = bool(session.get("guest"))
 
