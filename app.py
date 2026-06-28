@@ -28,6 +28,15 @@ from top_cc import get_top_cc_opportunities
 
 options_engine = get_shared_engine()
 
+_SCAN_REASON_MESSAGES = {
+    "no_history":    "Could not fetch price history from Yahoo Finance — try again in a moment.",
+    "no_indicators": "Insufficient price history to calculate indicators (need 200+ trading days).",
+    "below_dma":     "Stock is in a downtrend (below both 50-day and 200-day moving averages) — not ideal for selling premium.",
+    "no_expirations": "No option expirations found within the scan window (up to 45 days).",
+    "no_strikes":    "No contracts found in the 0.25–0.30 delta range within the scan window.",
+    "scan_error":    "Scan error — Yahoo Finance may be rate-limiting. Try again in a few minutes.",
+}
+
 app = Flask(__name__)
 
 # =========================
@@ -276,14 +285,17 @@ def view_csp(symbol):
             return redirect(url_for("login"))
 
     try:
-        opportunities = options_engine.find_csp_opportunities(symbol.upper())
+        opportunities, scan_reason = options_engine.find_csp_opportunities(symbol.upper())
     except Exception:
-        opportunities = []
+        opportunities, scan_reason = [], "scan_error"
+
+    scan_message = _SCAN_REASON_MESSAGES.get(scan_reason, "No qualifying opportunities found.")
 
     return render_template(
         "csp_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
+        scan_message=scan_message,
     )
 
 
@@ -405,14 +417,17 @@ def view_cc(symbol):
             return redirect(url_for("login"))
 
     try:
-        opportunities = options_engine.find_cc_opportunities(symbol.upper())
+        opportunities, scan_reason = options_engine.find_cc_opportunities(symbol.upper())
     except Exception:
-        opportunities = []
+        opportunities, scan_reason = [], "scan_error"
+
+    scan_message = _SCAN_REASON_MESSAGES.get(scan_reason, "No qualifying opportunities found.")
 
     return render_template(
         "cc_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
+        scan_message=scan_message,
     )
 
 

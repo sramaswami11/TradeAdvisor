@@ -92,7 +92,7 @@ class OptionsEngine:
                     time.sleep(wait)
 
             if hist is None or hist.empty:
-                return []
+                return [], "no_history"
 
             price = float(hist["Close"].iloc[-1])
 
@@ -103,17 +103,17 @@ class OptionsEngine:
             del hist  # free 1y of OHLCV data before options fetch
 
             if not data:
-                return []
+                return [], "no_indicators"
 
             strategy = StrategyEngine(data).evaluate()
             signals = strategy.get("signals", {})
 
             # -----------------------------------
-            # Trend filter — require above 200 DMA
-            # (stock quality gate for both CSP and CC)
+            # Trend filter — block only if below both DMAs
+            # (below 200 but above 50 = recovering; score reflects it)
             # -----------------------------------
-            if not signals.get("above_200_dma"):
-                return []
+            if not signals.get("above_200_dma") and not signals.get("above_50_dma"):
+                return [], "below_dma"
 
             # -----------------------------------
             # Fetch expirations
@@ -122,7 +122,7 @@ class OptionsEngine:
             expirations = self._get_expirations(ticker, symbol)
 
             if not expirations:
-                return []
+                return [], "no_expirations"
 
             earnings_date = self._get_next_earnings(ticker)
             opportunities = []
@@ -130,19 +130,24 @@ class OptionsEngine:
             atm_iv_distance = float("inf")
 
             # -----------------------------------
-            # Filter to valid DTE window
+            # Filter to valid DTE window, widening if needed
             # -----------------------------------
+            all_by_dte = sorted(
+                [(e, self._days_to_expiry(e)) for e in expirations],
+                key=lambda x: x[1]
+            )
+            all_by_dte = [(e, d) for e, d in all_by_dte if d >= 5]
+
             valid_expirations = []
+            for attempt_dte in [max_dte, 30, 45]:
+                valid_expirations = [(e, d) for e, d in all_by_dte if d <= attempt_dte]
+                if valid_expirations:
+                    break
 
-            for expiry in expirations:
-
-                dte = self._days_to_expiry(expiry)
-
-                if 5 <= dte <= max_dte:
-                    valid_expirations.append((expiry, dte))
-
-            valid_expirations.sort(key=lambda x: x[1])
             valid_expirations = valid_expirations[:self.MAX_EXPIRATIONS_TO_SCAN]
+
+            if not valid_expirations:
+                return [], "no_expirations"
 
             for i, (expiry, dte) in enumerate(valid_expirations):
 
@@ -279,10 +284,13 @@ class OptionsEngine:
             for opp in opportunities:
                 opp["iv_rank"] = iv_rank
 
-            return sorted(opportunities, key=lambda x: x["score"], reverse=True)
+            if not opportunities:
+                return [], "no_strikes"
+
+            return sorted(opportunities, key=lambda x: x["score"], reverse=True), "ok"
 
         except Exception:
-            return []
+            return [], "scan_error"
 
         finally:
             self._option_chain_cache.clear()

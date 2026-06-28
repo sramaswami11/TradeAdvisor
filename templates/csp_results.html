@@ -77,7 +77,7 @@
         </table>
     </div>
     {% else %}
-    <p class="empty-state">No suitable CSP opportunities found for {{ symbol }}.</p>
+    <p class="empty-state">{{ symbol }} — {{ scan_message }}</p>
     {% endif %}
 
     <p class="freshness-note">Data via Yahoo Finance · ~15 min delayed · verify with your broker before trading</p>

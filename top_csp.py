@@ -69,7 +69,7 @@ def _save_top_csp_cache(opportunities):
 
 def _scan_symbol(symbol):
     try:
-        opps = options_engine.find_csp_opportunities(symbol)
+        opps, _ = options_engine.find_csp_opportunities(symbol)
         return opps[:3] if opps else []
     except Exception:
         return []

@@ -83,8 +83,9 @@ def test_csp_engine_returns_results(monkeypatch):
 
     engine = OptionsEngine()
 
-    results = engine.find_csp_opportunities("AAPL")
+    results, reason = engine.find_csp_opportunities("AAPL")
 
+    assert reason == "ok"
     assert isinstance(results, list)
     assert len(results) > 0
 
@@ -125,9 +126,10 @@ def test_csp_engine_filters_bad_trend(monkeypatch):
 
     engine = OptionsEngine()
 
-    results = engine.find_csp_opportunities("BAD")
+    results, reason = engine.find_csp_opportunities("BAD")
 
     assert results == []
+    assert reason == "below_dma"
 
 
 # =========================================================

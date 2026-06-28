@@ -2,6 +2,54 @@
 
 ---
 
+## Session: 2026-06-27
+
+### 1. CSP Scan Returning Empty Results on Render — DIAGNOSED & FIXED
+
+**Symptom:** `/csp/SPY` returned 200 with only 944 bytes — empty results page. No errors in logs because the route swallows all exceptions silently (`except Exception: opportunities = []`).
+
+**Three silent gates identified (all return `[]` with no explanation):**
+1. **200 DMA filter** (`options_engine.py:115`) — hard blocks if stock below 200-day MA
+2. **DTE window** (`options_engine.py:141`) — only scanned 5–14 DTE; on a weekend with few upcoming expirations this can be empty
+3. **Delta filter** — if yfinance returns IV=0 or NaN, no strikes land in 0.25–0.30 delta band
+
+**Fix 1 — DTE fallback widening** (`options_engine.py`):
+- Was: only scan expirations with `5 <= DTE <= 14`, give up if none
+- Now: try 14 DTE first; if no valid expirations found, widen to 30, then 45
+- History fetch and 200 DMA check still run only once — the widening only retries the cheap expiration-list filter step
+
+**Fix 2 — Soften 200 DMA gate** (`options_engine.py`):
+- Was: `if not above_200_dma: return []` — blocked entirely if below 200-day MA
+- Now: `if not above_200_dma and not above_50_dma: return []` — only blocks if below both DMAs
+- Rationale: below 200 but above 50 = recovering; score already docks points for it. Below both = genuine downtrend, worth blocking.
+
+**Not yet committed — deploy tomorrow.**
+
+---
+
+## Pending for Next Session
+
+### Verify CSP fixes on Render
+Deploy the two `options_engine.py` changes and confirm `/csp/SPY` returns results.
+- DTE fallback: `options_engine.py` lines ~135–145
+- 200 DMA softened: `options_engine.py` line ~115
+
+### C — Column Tooltips / Legend (optional)
+Friends unfamiliar with options won't know what Delta, IV Rank, or "8 STRONG" mean.
+Options: hover tooltips on `<th>` headers, or a small legend paragraph below the table.
+Skip if all friends are options-literate.
+
+### D — Better Empty Scan Message (optional)
+Currently: "No suitable CSP opportunities found for AAPL."
+Better: "No contracts found in the 0.25–0.30 delta range expiring within 14 days."
+
+---
+
+## Commits This Session (2026-06-27)
+- None — changes staged locally, not yet committed
+
+---
+
 ## Session: 2026-06-26
 
 ### 1. Data Disclaimer on Results Pages — DONE
