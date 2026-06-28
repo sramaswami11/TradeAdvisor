@@ -40,16 +40,16 @@
                     <th>Symbol</th>
                     <th>Strike</th>
                     <th>Expiry</th>
-                    <th>DTE</th>
-                    <th>Bid</th>
-                    <th>Ask</th>
-                    <th>Ann%</th>
-                    <th>Distance%</th>
-                    <th>Delta</th>
-                    <th>OI</th>
-                    <th>IV Rank</th>
-                    <th>Earnings</th>
-                    <th>Score</th>
+                    <th title="Days to expiration">DTE</th>
+                    <th title="Best bid price — what you'd receive per share selling this call">Bid</th>
+                    <th title="Best ask price — the market's offer">Ask</th>
+                    <th title="Annualized premium yield: (bid ÷ strike) × (365 ÷ DTE) × 100">Ann%</th>
+                    <th title="How far the strike is above the current price. +5% means the stock must rise 5% before your shares get called away.">Distance%</th>
+                    <th title="Call delta (Black-Scholes). Target 0.25 to 0.30 = roughly 70–75% chance the call expires worthless and you keep the premium.">Delta</th>
+                    <th title="Open Interest — number of outstanding contracts. Higher = more liquid, easier to enter/exit.">OI</th>
+                    <th title="IV Rank (0–100): where current implied volatility sits vs. its 52-week range. ≥50 = elevated premium — good time to sell. Builds up over ~1 week of hourly scans.">IV Rank</th>
+                    <th title="Next earnings date. ⚠ EARN = expiration is within 5 days of earnings — stock can gap sharply on the report.">Earnings</th>
+                    <th title="Composite score (0–11): trend alignment, premium yield, annualized return, distance from price. STRONG ≥8 · GOOD 5–7 · OK 3–4 · WEAK &lt;3">Score</th>
                 </tr>
             </thead>
             <tbody>

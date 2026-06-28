@@ -96,6 +96,12 @@ th {
     color: #666;
 }
 
+th[title] {
+    cursor: help;
+    text-decoration: underline dotted #aaa;
+    text-underline-offset: 3px;
+}
+
 tbody tr:hover { background: #fafbfd; }
 tbody tr:last-child td { border-bottom: none; }
 
