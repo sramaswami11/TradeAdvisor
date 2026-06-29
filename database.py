@@ -185,6 +185,15 @@ def remove_ticker_from_user(user_id: int, symbol: str):
     conn.close()
 
 
+def get_all_users() -> list[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT id, email, name FROM users WHERE email IS NOT NULL ORDER BY id")
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
+
+
 def update_user_name_if_missing(user_id: int, name: str):
     conn = get_connection()
     c = conn.cursor()

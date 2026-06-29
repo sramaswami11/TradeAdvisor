@@ -25,6 +25,7 @@ from database import (
 
 from top_csp import get_top_csp_opportunities
 from top_cc import get_top_cc_opportunities
+from digest import maybe_send_digest
 
 options_engine = get_shared_engine()
 
@@ -48,6 +49,13 @@ if not app.secret_key:
 
 DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA"]
 MAG7 = ["AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA"]
+
+
+@app.before_request
+def check_daily_digest():
+    if not request.path.startswith("/static/"):
+        maybe_send_digest()
+
 
 # =========================
 # Helpers
@@ -326,6 +334,21 @@ def admin_clear_cache():
     set_cache("top_csp_cache", "[]", ts)
     set_cache("top_cc_cache", "[]", ts)
     return "top_csp_cache and top_cc_cache cleared — background scans will repopulate within a few minutes.", 200
+
+
+@app.route("/admin/send-digest")
+def admin_send_digest():
+    """Trigger the daily digest immediately (for testing)."""
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    from digest import _do_send, _mark_sent
+    import threading
+    threading.Thread(target=_do_send, daemon=True, name="digest-manual").start()
+    return "Digest send triggered — check Render logs and your inbox in ~30s.", 200
 
 
 @app.route("/admin/cc-status")
