@@ -35,7 +35,7 @@ class OptionsEngine:
         "expiration_cache.json"
     )
 
-    EXPIRATION_CACHE_SECONDS = 86400  # 24 hours
+    EXPIRATION_CACHE_SECONDS = 604800  # 7 days — expiration dates don't change; DTE is computed fresh
 
     OPTION_CHAIN_CACHE_SECONDS = 1800
 
