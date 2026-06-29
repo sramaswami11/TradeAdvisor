@@ -328,6 +328,51 @@ def admin_clear_cache():
     return "top_csp_cache and top_cc_cache cleared — background scans will repopulate within a few minutes.", 200
 
 
+@app.route("/admin/cc-status")
+def admin_cc_status():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    from database import get_cache
+    import time, json as _json
+    row = get_cache("top_cc_cache")
+    if not row:
+        return "top_cc_cache: not in DB\n", 200
+    age = int(time.time() - row["timestamp"])
+    try:
+        opps = _json.loads(row["value"])
+        return f"top_cc_cache: {len(opps)} opportunities, {age}s old\n\n{row['value'][:1000]}", 200
+    except Exception as e:
+        return f"top_cc_cache parse error: {e}\nRaw: {row['value'][:500]}", 200
+
+
+@app.route("/admin/cc-debug")
+def admin_cc_debug():
+    """Synchronous single-symbol CC scan — slow (~30s) but shows exactly what the scanner sees."""
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    symbol = request.args.get("symbol", "AAPL").upper()
+    try:
+        opps, reason = options_engine.find_cc_opportunities(symbol)
+        lines = [f"Symbol: {symbol}", f"Reason: {reason}", f"Count: {len(opps)}", ""]
+        for o in opps[:5]:
+            lines.append(
+                f"  strike={o.get('strike')} expiry={o.get('expiry')} "
+                f"dte={o.get('dte')} delta={o.get('delta')} "
+                f"bid={o.get('bid')} ann={o.get('annualized')}% score={o.get('score')}"
+            )
+        return "\n".join(lines), 200, {"Content-Type": "text/plain"}
+    except Exception as e:
+        return f"Error scanning {symbol}: {e}", 500
+
+
 # =========================
 # ADMIN UPLOAD
 # =========================

@@ -1,10 +1,13 @@
 import json
+import logging
 import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from options_engine import get_shared_engine
 from database import get_cache, set_cache, get_all_tickers
+
+logger = logging.getLogger(__name__)
 
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
 _TOP_CC_CACHE_FILE = os.path.join(_CACHE_DIR, "top_cc_cache.json")
@@ -65,9 +68,11 @@ def _save_top_cc_cache(opportunities):
 
 def _scan_symbol(symbol):
     try:
-        opps, _ = options_engine.find_cc_opportunities(symbol)
+        opps, reason = options_engine.find_cc_opportunities(symbol)
+        logger.info("CC scan %s: %d opps, reason=%s", symbol, len(opps), reason)
         return opps[:3] if opps else []
-    except Exception:
+    except Exception as e:
+        logger.error("CC scan %s: exception %s", symbol, e)
         return []
 
 
