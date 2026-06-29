@@ -214,13 +214,16 @@ class OptionsEngine:
                         # -----------------------------------
                         # OTM window filter
                         # CSP: puts below price (0 to -10%)
-                        # CC:  calls above price (0 to +10%)
+                        # CC:  calls above price (0 to +20%)
+                        #      10% was too tight — for high-IV stocks (NVDA, META)
+                        #      the 0.25-delta call sits 11-15% OTM on 14-30 DTE.
+                        #      Delta filter (0.25-0.30) is the real constraint.
                         # -----------------------------------
                         if side == "csp":
                             if distance_pct > 0 or distance_pct < -0.10:
                                 continue
                         else:
-                            if distance_pct < 0 or distance_pct > 0.10:
+                            if distance_pct < 0 or distance_pct > 0.20:
                                 continue
 
                         # -----------------------------------

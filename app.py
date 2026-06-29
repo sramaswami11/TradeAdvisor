@@ -322,8 +322,10 @@ def admin_clear_cache():
 
     from database import set_cache
     import time
-    set_cache("top_csp_cache", "[]", time.time())
-    return "top_csp_cache cleared — background scan will repopulate within a few minutes.", 200
+    ts = time.time()
+    set_cache("top_csp_cache", "[]", ts)
+    set_cache("top_cc_cache", "[]", ts)
+    return "top_csp_cache and top_cc_cache cleared — background scans will repopulate within a few minutes.", 200
 
 
 # =========================
