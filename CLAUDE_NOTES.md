@@ -2,6 +2,100 @@
 
 ---
 
+## Session: 2026-06-28
+
+### 1. CSP Fixes Committed & Deployed — DONE
+
+The two `options_engine.py` fixes from 2026-06-27 were sitting uncommitted. Committed and pushed as part of `6d3fbc7` today.
+- **DTE fallback widening** (`options_engine.py:142–145`): tries max_dte → 30 → 45 until valid expirations found
+- **200 DMA gate softened** (`options_engine.py:115`): requires below BOTH 50 and 200 DMA to block (not just 200)
+
+Render deployed and `/csp/SPY` confirmed returning results.
+
+---
+
+### 2. Structured Scan Reason Codes — DONE (commit `6d3fbc7`)
+
+`_find_opportunities` was returning bare `[]` at every failure point with no explanation. Changed to return `(list, reason_str)` at every exit.
+
+**Reason codes:**
+| Code | Trigger |
+|---|---|
+| `no_history` | yfinance couldn't fetch 1-year price history |
+| `no_indicators` | `<200` trading days in history |
+| `below_dma` | stock below both 50-day and 200-day MA |
+| `no_expirations` | no option expirations within 45-day window |
+| `no_strikes` | contracts exist but none passed delta/OTM/liquidity filters |
+| `scan_error` | outer exception (rate limit, network, etc.) |
+| `ok` | results found |
+
+**Callers updated:**
+- `app.py`: unpacks tuple, maps reason → human-readable `scan_message`, passes to template. `_SCAN_REASON_MESSAGES` dict in `app.py`.
+- `top_csp.py` / `top_cc.py`: `opps, _ = ...` (background scanner discards reason)
+- `templates/csp_results.html` + `cc_results.html`: empty-state now shows `{{ symbol }} — {{ scan_message }}`
+- `tests/test_options_engine.py`: both integration tests updated to unpack tuple and assert reason code (`"ok"` and `"below_dma"`)
+
+This also resolved item **D — Better Empty Scan Message** from the backlog: `"no_strikes"` maps to "No contracts found in the 0.25–0.30 delta range within the scan window."
+
+---
+
+### 3. Column Hover Tooltips — DONE (commit `a00f951`)
+
+Added `title` attributes to every non-obvious `<th>` across all 5 templates:
+- **Options pages** (`csp_results.html`, `cc_results.html`, `top_csp.html`, `top_cc.html`): DTE, Bid, Ask, Ann%, Distance%, Delta, OI, IV Rank, Earnings, Score
+- **Dashboard** (`dashboard.html`): Change, 50 DMA, 200 DMA, RSI, Rating, Confidence, CSP, CC
+- Delta tooltip wording differs: "put delta" for CSP, "call delta" for CC. Distance% wording differs: "below price" for CSP, "above price / before shares get called away" for CC.
+- `static/style.css`: added `th[title] { cursor: help; text-decoration: underline dotted #aaa; }` so users know headers are hoverable.
+
+---
+
+### 4. NVDA Typo — CONFIRMED FIXED
+
+User confirmed NVDIA → NVDA is correct on live Render. No code change needed.
+
+---
+
+### 5. IV Rank Not Showing — DIAGNOSED (not fixed)
+
+**Symptom:** IV Rank shows `—` on all symbols on Render.
+
+**Root cause:** Render free tier spins the instance down after ~15 min of no traffic. Each spin-down kills the background scanner thread. When traffic restarts the instance, the thread restarts too — but the missed hours are lost. Instead of ~96 hourly readings over 4 days, the actual count may be well below the 5-reading minimum required by `get_iv_rank()`.
+
+**Next step:** Query the `iv_history` table on Render PostgreSQL to see actual reading counts:
+```sql
+SELECT symbol, COUNT(*) as readings, MIN(recorded_at), MAX(recorded_at)
+FROM iv_history
+GROUP BY symbol
+ORDER BY readings DESC;
+```
+
+**Proposed fix:** Add `/admin/iv-status` route that runs this query and renders the result in the browser — easier than digging into the Render PostgreSQL console every time.
+
+---
+
+## Pending for Next Session
+
+### IV Rank Diagnostic Route
+Add `/admin/iv-status` route to query `iv_history` reading counts per symbol. Confirm whether the background scanner is accumulating readings on Render's free tier. If counts are consistently low, may need a different accumulation strategy (e.g. record IV on every per-symbol user scan, not just background scanner).
+
+### Future Enhancement: Daily Market-Open Alert (Email Digest)
+Discussed but not started. Plan:
+- At 9:35 AM ET on weekdays, pull top-scored CSP/CC from existing cache
+- Format as HTML email (top 3–5 opportunities per side)
+- Send via **SendGrid** free tier (100 emails/day) to user's email
+- Each opportunity links directly to `/csp/<symbol>` or `/cc/<symbol>`
+- Estimated effort: ~half a session
+- Alternative: SMS via Twilio (more intrusive, adds paid dependency)
+- Skip PWA push notifications — too complex for a personal tool
+
+---
+
+## Commits This Session (2026-06-28)
+- `6d3fbc7` — Add structured scan reason codes to replace silent empty returns
+- `a00f951` — Add hover tooltips to all table column headers
+
+---
+
 ## Session: 2026-06-27
 
 ### 1. CSP Scan Returning Empty Results on Render — DIAGNOSED & FIXED
