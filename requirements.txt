@@ -13,7 +13,7 @@ pandas==2.3.3
 numpy==1.26.2
 
 # Financial Data
-yfinance==0.2.66
+yfinance==1.5.1
 requests
 
 

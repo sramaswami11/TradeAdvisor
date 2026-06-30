@@ -8,8 +8,13 @@ from options_engine import get_shared_engine
 
 import yfinance as yf
 import pandas as pd
+import logging
 
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+_startup_logger = logging.getLogger(__name__)
+_startup_logger.info(f"yfinance version: {yf.__version__}")
 
 from market_data.provider import fetch_snapshot
 from database import (
