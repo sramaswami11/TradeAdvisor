@@ -8,6 +8,8 @@ import time
 import pandas as pd
 import yfinance as yf
 
+from database import get_cache, set_cache
+
 logger = logging.getLogger(__name__)
 
 _CACHE_DIR = "/tmp" if os.path.exists("/tmp") else "."
@@ -24,25 +26,43 @@ def _snapshot_cache_path(symbol: str) -> str:
 
 
 def _load_snapshot_cache(symbol: str, ignore_ttl: bool = False):
+    # Try file cache first (fastest path)
     try:
         path = _snapshot_cache_path(symbol)
-        if not os.path.exists(path):
-            return None
-        with open(path, "r") as f:
-            data = json.load(f)
-        age = time.time() - data.get("timestamp", 0)
-        if ignore_ttl or age < _SNAPSHOT_CACHE_TTL:
-            return data["snapshot"]
-        return None
+        if os.path.exists(path):
+            with open(path, "r") as f:
+                data = json.load(f)
+            age = time.time() - data.get("timestamp", 0)
+            if ignore_ttl or age < _SNAPSHOT_CACHE_TTL:
+                return data["snapshot"]
     except Exception:
-        return None
+        pass
+
+    # Fall back to DB cache (survives Render restarts)
+    try:
+        row = get_cache(f"snapshot:{symbol}")
+        if row:
+            age = time.time() - row["timestamp"]
+            if ignore_ttl or age < _SNAPSHOT_CACHE_TTL:
+                return json.loads(row["value"])
+    except Exception:
+        pass
+
+    return None
 
 
 def _save_snapshot_cache(symbol: str, snapshot: dict):
+    ts = time.time()
+    # Write to file cache
     try:
         path = _snapshot_cache_path(symbol)
         with open(path, "w") as f:
-            json.dump({"timestamp": time.time(), "snapshot": snapshot}, f)
+            json.dump({"timestamp": ts, "snapshot": snapshot}, f)
+    except Exception:
+        pass
+    # Write to DB cache (persists across restarts)
+    try:
+        set_cache(f"snapshot:{symbol}", json.dumps(snapshot), ts)
     except Exception:
         pass
 
