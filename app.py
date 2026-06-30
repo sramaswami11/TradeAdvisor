@@ -350,8 +350,20 @@ def admin_send_digest():
     if not is_admin(user):
         abort(403)
 
-    from digest import _do_send, _mark_sent
+    from top_csp import get_top_csp_opportunities
+    from top_cc import get_top_cc_opportunities
+    from digest import _do_send
     import threading
+
+    csp = get_top_csp_opportunities()
+    cc = get_top_cc_opportunities()
+
+    if not csp and not cc:
+        return (
+            "Both caches are empty — background scan just started. "
+            "Wait 10-15 minutes for the scan to finish, then try again."
+        ), 202
+
     threading.Thread(target=_do_send, daemon=True, name="digest-manual").start()
     return "Digest send triggered — check Render logs and your inbox in ~30s.", 200
 

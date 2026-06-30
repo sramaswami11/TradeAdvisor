@@ -154,8 +154,10 @@ def _load_opps(cache_key: str, limit: int = 5) -> list:
 
 
 def _do_send():
-    csp_opps = _load_opps("top_csp_cache")
-    cc_opps  = _load_opps("top_cc_cache")
+    from top_csp import get_top_csp_opportunities
+    from top_cc import get_top_cc_opportunities
+    csp_opps = get_top_csp_opportunities()[:5]
+    cc_opps  = get_top_cc_opportunities()[:5]
 
     if not csp_opps and not cc_opps:
         logger.info("Digest: both caches empty — skipping")
