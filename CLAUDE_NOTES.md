@@ -2,6 +2,92 @@
 
 ---
 
+## Session: 2026-06-29
+
+### 1. Top-CC Stuck on "Scan in Progress" — FIXED (commit `b920351`)
+
+**Root cause:** CC OTM filter capped at 10% above price. For high-IV stocks (NVDA, META), the 0.25-delta call strike sits 11–15% OTM on 14–30 DTE options. Every CC strike was filtered before the delta check ran, so results were always `[]`, cache was never written, page stayed stuck.
+
+**Fix:** Raised CC OTM ceiling from 10% → 20% in `options_engine.py` line ~223. The delta filter (0.25–0.30) is still the real constraint.
+
+Also updated `/admin/clear-cache` to flush `top_cc_cache` alongside `top_csp_cache`.
+
+---
+
+### 2. CC Scan Diagnostics Added (commit `60d3fa3`)
+
+Added three tools for ongoing visibility:
+- **`top_cc.py` logging**: `_scan_symbol` now logs reason code and opp count per symbol to Render logs
+- **`/admin/cc-status`**: instant DB read showing what's in `top_cc_cache` (count, age, raw JSON)
+- **`/admin/cc-debug?symbol=AAPL`**: synchronous single-symbol CC scan (~30s), returns strike/delta/bid/ann%/score or reason code
+
+---
+
+### 3. Yahoo Finance Blocking Render for Options Data — DIAGNOSED
+
+**Symptom:** Both CSP and CC scans returning `no_expirations` for all symbols on Render. Works fine locally.
+
+**Root cause:** Yahoo Finance rate-limits or blocks data center IPs (Render's AWS infrastructure) for their options endpoint (`ticker.options`). History endpoint (`ticker.history()`) uses a different Yahoo Finance API path that is less aggressively gated. Three rapid redeploys today likely triggered the block by causing burst yfinance calls on startup.
+
+**Fix applied:** Extended `EXPIRATION_CACHE_SECONDS` from 24h → 7 days (`options_engine.py`). Expiration dates are set by the exchange months in advance; DTE is always computed fresh from `datetime.today()`. Once the rate limit clears and the cache is seeded, it survives a full week of deploys without re-fetching.
+
+**Expected recovery:** Rate limit should clear overnight. On next successful `ticker.options` call, PostgreSQL `expiration_cache` is populated with 7-day TTL. No manual action needed — background scanner auto-populates on next hourly cycle.
+
+---
+
+### 4. Daily Market-Open Email Digest — DONE (commit `4629c5a`, **NOT YET PUSHED**)
+
+**Behaviour:** At 9:35 AM ET on weekdays, reads `top_csp_cache` and `top_cc_cache` from PostgreSQL, builds an HTML email with top 5 CSP and top 5 CC opportunities (inline styles, score badges, links to per-symbol scan pages), sends to every registered user via Mailjet. Skips if both caches are empty.
+
+**Scheduling mechanism:** `@app.before_request` hook in `app.py` — checks time on every non-static request. In-process `_fired_date` flag + DB `last_digest_date` cache key prevent double-sends even across Render restarts.
+
+**Files changed:**
+- `digest.py` — new file; all scheduling, HTML building, send logic
+- `database.py` — added `get_all_users()` (returns all registered email addresses)
+- `app.py` — `before_request` hook; `/admin/send-digest` test route (bypasses time check)
+
+**Admin test route:** `/admin/send-digest` triggers an immediate send for testing without waiting for 9:35 AM.
+
+**Render env vars required (not yet set):**
+| Var | Value |
+|---|---|
+| `ENABLE_EMAIL` | `true` |
+| `MAILJET_API_KEY` | from Mailjet dashboard |
+| `MAILJET_API_SECRET` | from Mailjet dashboard |
+| `EMAIL_FROM` | verified sender in Mailjet (e.g. `tradeadvisor2025@gmail.com`) |
+| `ADMIN_EMAIL` | `tradeadvisor2025@gmail.com` (already set — admin access control only) |
+
+**Note:** `email_utils.py` was an existing file from the original app using Mailjet (not SendGrid as previously discussed). Reused as-is.
+
+---
+
+## Pending for Next Session
+
+### Push Commits
+Run `git push` — commits `b920351`, `60d3fa3`, `743b6ca`, `4629c5a` are local only.
+
+### Set Mailjet Env Vars on Render
+Add `ENABLE_EMAIL`, `MAILJET_API_KEY`, `MAILJET_API_SECRET`, `EMAIL_FROM` to Render environment. Verify `tradeadvisor2025@gmail.com` as a sender in Mailjet first.
+
+### Test Email Digest
+After deploy + env vars set, hit `/admin/send-digest` and confirm email arrives in inbox. Check Render logs for `"Digest sent to N user(s)"`.
+
+### Confirm Yahoo Finance Rate Limit Cleared
+Check `/csp/SPY` and `/top-csp` tomorrow morning. If still returning `no_expirations`, the block may be persistent rather than temporary — would need to investigate alternatives (proxy, different yfinance version, or Render paid tier with static IP).
+
+### IV Rank Diagnostic Route (carried over)
+Add `/admin/iv-status` to query `iv_history` reading counts per symbol.
+
+---
+
+## Commits This Session (2026-06-29)
+- `b920351` — Fix top-cc stuck on 'Scan in progress' — widen CC OTM window to 20%
+- `60d3fa3` — Add CC scan diagnostics: per-symbol logging + /admin/cc-status + /admin/cc-debug
+- `743b6ca` — Extend expiration cache TTL from 24h to 7 days
+- `4629c5a` — Add daily market-open email digest to all registered users
+
+---
+
 ## Session: 2026-06-28
 
 ### 1. CSP Fixes Committed & Deployed — DONE
