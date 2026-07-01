@@ -2,6 +2,81 @@
 
 ---
 
+## Session: 2026-06-30
+
+### 1. yfinance Upgraded 0.2.66 → 1.5.1 (commits `ffc0d67`)
+
+**Root cause:** Yahoo Finance changed their authentication API (cookie + crumb system). yfinance 0.2.x gets an empty response body from every call, causing `"Expecting value: line 1 column 1 (char 0)"` on all symbols — not rate limiting, not Render-specific, a global auth failure.
+
+**Fix:** Upgraded to yfinance 1.5.1 (latest). curl_cffi also bumped 0.14.0 → 0.15.0. `requirements.txt` pinned to `yfinance==1.5.1`.
+
+**Code compatibility:** `_get_next_earnings()` in `options_engine.py` already handled `Earnings Date` as a list (line 313: `isinstance(earnings, (list, tuple))`). No other code changes needed.
+
+**Added startup version log** to `app.py` so we can confirm which version Render is actually running:
+```
+INFO:app:yfinance version: 1.5.1
+```
+
+**Render note:** curl_cffi 0.15.0 compiled successfully on Render — no issues.
+
+**Gotcha:** User was running Flask via system Python (yfinance 0.2.28) instead of `.venv`. Always run via `.venv\Scripts\python -m flask run` or activate `.venv` first.
+
+---
+
+### 2. Snapshot Cache Persisted to PostgreSQL (commit `dcdeff9`)
+
+**Problem:** Render wipes `/tmp` on every cold start. Dashboard triggers yfinance fetches for all 7+ symbols simultaneously → Yahoo Finance 429 rate limit → all fetches fail.
+
+**Fix:** `market_data/provider.py` now writes snapshots to the existing `cache` table in PostgreSQL (key: `snapshot:{symbol}`) in addition to the `/tmp` file. On load: tries file first (fast path), falls back to DB (survives restarts).
+
+**Behavior:** First cold start after deploy still hits Yahoo Finance (DB empty), but populates DB. Every subsequent cold start reads from DB instantly — no burst, no 429.
+
+**Staleness:** 15-minute TTL is enforced on DB reads the same as file reads. The `ignore_ttl=True` fallback (used when live fetch fails) can serve stale data, but that's intentional degradation — better than showing `—` everywhere.
+
+---
+
+### 3. Mailjet Email Digest — Wired Up on Render
+
+**Env vars added to Render:**
+- `ENABLE_EMAIL=true`
+- `MAILJET_API_KEY` / `MAILJET_API_SECRET` (from Mailjet dashboard)
+- `EMAIL_FROM=tradeadvisor2025@gmail.com` (verified sender in Mailjet)
+- `ADMIN_EMAIL=tradeadvisor2025@gmail.com`
+
+**`/admin/send-digest` fixes (commit `a138c46`):**
+- Was: silently skipped if caches empty, returned generic "triggered" message regardless
+- Now: calls `get_top_csp_opportunities()` / `get_top_cc_opportunities()` first (which kick off background scanner threads if not running). Returns HTTP 202 with clear message if caches empty: *"Both caches are empty — background scan just started. Wait 10-15 minutes..."*
+
+**`_do_send()` in `digest.py`:** Now uses `get_top_csp/cc_opportunities()` instead of raw `_load_opps()` — consistent with admin route and ensures threads are always running.
+
+**Status:** Mailjet confirmed `Status: success` and assigned a MessageID. Logs show `"Digest sent to 1 user(s) — 5 CSP, 5 CC opportunities"`. However, email not received at `tradeadvisor2025@gmail.com`.
+
+**Likely cause:** FROM and TO are the same address (`tradeadvisor2025@gmail.com`). Gmail may silently drop self-sent emails from third-party senders. Need to test with a different recipient.
+
+---
+
+## Pending for Next Session
+
+### Investigate Email Not Received
+- Check Mailjet dashboard → Transactional → Message Statistics for MessageID `288230414370833970` — look for "delivered", "soft bounce", or "blocked"
+- Test with a different recipient email (a user registered with a different address)
+- If confirmed Gmail self-send issue: register a second user with a different email and test delivery to that address
+
+### IV Rank Diagnostic (`/admin/iv-status`)
+IV Rank still shows `—` on all symbols. Add route to query `iv_history` reading counts:
+```sql
+SELECT symbol, COUNT(*), MIN(recorded_at), MAX(recorded_at) FROM iv_history GROUP BY symbol;
+```
+
+---
+
+## Commits This Session (2026-06-30)
+- `ffc0d67` — Upgrade yfinance 0.2.66 → 1.5.1; add startup version log
+- `dcdeff9` — Persist snapshot cache to PostgreSQL to survive Render restarts
+- `a138c46` — Fix digest skipping when caches empty after cold start
+
+---
+
 ## Session: 2026-06-29
 
 ### 1. Top-CC Stuck on "Scan in Progress" — FIXED (commit `b920351`)
