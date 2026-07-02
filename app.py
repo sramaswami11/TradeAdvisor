@@ -25,7 +25,8 @@ from database import (
     get_tickers_for_user,
     add_ticker_to_user,
     remove_ticker_from_user,
-    update_user_name_if_missing
+    update_user_name_if_missing,
+    set_digest_opt_in,
 )
 
 from top_csp import get_top_csp_opportunities
@@ -283,6 +284,7 @@ def dashboard():
         selected_rationale=selected_rationale,
         user=user,
         guest=is_guest,
+        digest_opt_in=False if is_guest else user.get("digest_opt_in", True),
     )
 
 
@@ -318,6 +320,18 @@ def remove_ticker(symbol):
         return redirect(url_for("login"))
     if not session.get("guest"):
         remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/settings/digest", methods=["POST"])
+def toggle_digest():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not user:
+        session.clear()
+        return redirect(url_for("login"))
+    set_digest_opt_in(user["id"], not user.get("digest_opt_in", True))
     return redirect(url_for("dashboard"))
 
 

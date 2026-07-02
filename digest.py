@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from database import get_cache, set_cache, get_all_users
+from database import get_cache, set_cache, get_digest_users
 from email_utils import send_email, create_email_template, ENABLE_EMAIL
 
 logger = logging.getLogger(__name__)
@@ -163,9 +163,9 @@ def _do_send():
         logger.info("Digest: both caches empty — skipping")
         return
 
-    users = get_all_users()
+    users = get_digest_users()
     if not users:
-        logger.info("Digest: no registered users")
+        logger.info("Digest: no subscribed users")
         return
 
     subject = f"TradeAdvisor · {datetime.now(_ET).strftime('%b %-d')} · Top CSP & CC Opportunities"

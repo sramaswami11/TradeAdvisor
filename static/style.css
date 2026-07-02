@@ -341,6 +341,34 @@ pre {
     color: #aaa;
 }
 
+/* ── Digest preference bar ───────────────────── */
+.digest-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+    font-size: 13px;
+    color: #555;
+}
+.digest-label { color: #666; }
+.digest-status { font-weight: 600; }
+.digest-on  { color: #1a6b34; }
+.digest-off { color: #999; }
+.digest-btn {
+    padding: 4px 12px;
+    border-radius: 6px;
+    border: 1px solid;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: inherit;
+    background: white;
+}
+.digest-btn-off { border-color: #d1d5db; color: #666; }
+.digest-btn-off:hover { border-color: #999; color: #333; }
+.digest-btn-on  { border-color: #4a6cf7; color: #4a6cf7; }
+.digest-btn-on:hover  { background: #4a6cf7; color: white; }
+
 /* ── Responsive ──────────────────────────────── */
 @media (max-width: 768px) {
     .site-header { padding: 0 16px; }

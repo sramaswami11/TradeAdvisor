@@ -92,6 +92,23 @@
 
     <p class="freshness-note">⏱ Prices cached for 15 min — data reflects the most recent market close or intraday price.</p>
 
+    {% if not guest %}
+    <div class="digest-bar">
+        <span class="digest-label">Daily digest email (9:35 AM ET on weekdays):</span>
+        {% if digest_opt_in %}
+        <span class="digest-status digest-on">On</span>
+        <form method="POST" action="{{ url_for('toggle_digest') }}" style="display:inline;">
+            <button type="submit" class="digest-btn digest-btn-off">Unsubscribe</button>
+        </form>
+        {% else %}
+        <span class="digest-status digest-off">Off</span>
+        <form method="POST" action="{{ url_for('toggle_digest') }}" style="display:inline;">
+            <button type="submit" class="digest-btn digest-btn-on">Subscribe</button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+
     {% if selected_rationale %}
     <div class="panel">
         <h3>{{ selected_rationale.symbol }} — Rationale</h3>

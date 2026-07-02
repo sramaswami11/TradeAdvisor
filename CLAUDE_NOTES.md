@@ -2,6 +2,55 @@
 
 ---
 
+## Session: 2026-07-01
+
+### 1. Digest Subscription / Unsubscription — DONE
+
+**Feature:** Users can now subscribe or unsubscribe from the daily digest email directly from the dashboard.
+
+**Schema change:** Added `digest_opt_in BOOLEAN DEFAULT TRUE` to the `users` table. Existing rows auto-migrated on first request after deploy via `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (PostgreSQL) / try-except (SQLite). All existing users default to subscribed.
+
+**Files changed:**
+- `database.py` — added `digest_opt_in` to both `CREATE TABLE` variants + migration; updated `get_user_by_id` and `get_user_by_email` to return `digest_opt_in`; added `get_digest_users()` (filters `digest_opt_in = TRUE`) and `set_digest_opt_in(user_id, bool)`
+- `digest.py` — switched from `get_all_users()` to `get_digest_users()` so unsubscribed users are excluded from sends
+- `app.py` — imported `set_digest_opt_in`; added `/settings/digest` POST route that toggles preference and redirects to dashboard; passes `digest_opt_in` to dashboard template
+- `templates/dashboard.html` — "Daily digest email (9:35 AM ET on weekdays): **On** [Unsubscribe]" / "**Off** [Subscribe]" toggle bar below watchlist table (hidden for guests)
+- `static/style.css` — added `.digest-bar`, `.digest-status`, `.digest-btn-on/off` styles
+
+**All 64 tests still passing.**
+
+---
+
+### 2. Email Delivery — CLARIFIED (no code issue)
+
+**Mailjet sender addresses ≠ registered users.** Mailjet "sender addresses" (`sramaswami2021@gmail.com`, `sramaswami2025@gmail.com`, `tradeadvisor2025@gmail.com`) are addresses Mailjet allows as FROM — they are not digest recipients.
+
+**Digest recipients** = rows in the `users` table with `digest_opt_in = TRUE`. The only registered user is `tradeadvisor2025@gmail.com`, which is why only that address received the digest.
+
+**Self-send concern was wrong:** `tradeadvisor2025@gmail.com` (FROM = TO) DID receive the email. Gmail is not dropping it. Mailjet delivery is working correctly.
+
+**To add other recipients:** Simply sign in to the Render app once with each email address (`sramaswami2021@gmail.com`, `sramaswami2025@gmail.com`). They'll be created as users with `digest_opt_in = TRUE` and will receive future digests automatically.
+
+---
+
+## Pending for Next Session
+
+### Register additional users for digest
+Sign in to Render app with `sramaswami2021@gmail.com` and/or `sramaswami2025@gmail.com` to add them as registered users. They'll receive the digest automatically once registered.
+
+### IV Rank Diagnostic (`/admin/iv-status`) — still pending
+IV Rank still shows `—` on all symbols. Add route to query `iv_history` reading counts:
+```sql
+SELECT symbol, COUNT(*), MIN(recorded_at), MAX(recorded_at) FROM iv_history GROUP BY symbol;
+```
+
+---
+
+## Commits This Session (2026-07-01)
+- pending push — digest subscription/unsubscription feature
+
+---
+
 ## Session: 2026-06-30
 
 ### 1. yfinance Upgraded 0.2.66 → 1.5.1 (commits `ffc0d67`)

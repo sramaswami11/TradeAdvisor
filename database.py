@@ -33,7 +33,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
-                name TEXT
+                name TEXT,
+                digest_opt_in BOOLEAN DEFAULT TRUE
             )
         """)
         c.execute("""
@@ -45,12 +46,17 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
+        # Migration: add digest_opt_in to existing tables
+        c.execute("""
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_opt_in BOOLEAN DEFAULT TRUE
+        """)
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 email TEXT UNIQUE NOT NULL,
-                name TEXT
+                name TEXT,
+                digest_opt_in BOOLEAN DEFAULT 1
             )
         """)
         c.execute("""
@@ -62,6 +68,11 @@ def init_db():
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
+        # Migration: add digest_opt_in to existing tables
+        try:
+            c.execute("ALTER TABLE users ADD COLUMN digest_opt_in BOOLEAN DEFAULT 1")
+        except Exception:
+            pass  # Column already exists
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS cache (
@@ -107,14 +118,14 @@ def get_user_by_email(email: str):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        f"SELECT id, email, name FROM users WHERE email = {_P}",
+        f"SELECT id, email, name, digest_opt_in FROM users WHERE email = {_P}",
         (email,)
     )
     row = c.fetchone()
     conn.close()
 
     if row:
-        return {"id": row[0], "email": row[1], "name": row[2]}
+        return {"id": row[0], "email": row[1], "name": row[2], "digest_opt_in": bool(row[3]) if row[3] is not None else True}
     return None
 
 
@@ -122,14 +133,14 @@ def get_user_by_id(user_id: int):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        f"SELECT id, email, name FROM users WHERE id = {_P}",
+        f"SELECT id, email, name, digest_opt_in FROM users WHERE id = {_P}",
         (user_id,)
     )
     row = c.fetchone()
     conn.close()
 
     if row:
-        return {"id": row[0], "email": row[1], "name": row[2]}
+        return {"id": row[0], "email": row[1], "name": row[2], "digest_opt_in": bool(row[3]) if row[3] is not None else True}
     return None
 
 
@@ -192,6 +203,28 @@ def get_all_users() -> list[dict]:
     rows = c.fetchall()
     conn.close()
     return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
+
+
+def get_digest_users() -> list[dict]:
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, email, name FROM users WHERE email IS NOT NULL AND digest_opt_in = TRUE ORDER BY id"
+    )
+    rows = c.fetchall()
+    conn.close()
+    return [{"id": r[0], "email": r[1], "name": r[2]} for r in rows]
+
+
+def set_digest_opt_in(user_id: int, opt_in: bool):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        f"UPDATE users SET digest_opt_in = {_P} WHERE id = {_P}",
+        (opt_in, user_id)
+    )
+    conn.commit()
+    conn.close()
 
 
 def update_user_name_if_missing(user_id: int, name: str):
