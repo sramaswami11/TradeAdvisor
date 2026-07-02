@@ -427,6 +427,32 @@ def admin_cc_debug():
         return f"Error scanning {symbol}: {e}", 500
 
 
+@app.route("/admin/iv-status")
+def admin_iv_status():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    from database import get_iv_status
+    rows = get_iv_status()
+    if not rows:
+        return "iv_history table is empty — no readings recorded yet.", 200
+    lines = [f"{'Symbol':<8} {'Readings':>8}  {'First (h ago)':>14}  {'Last (m ago)':>12}"]
+    lines.append("-" * 50)
+    for r in rows:
+        if "error" in r:
+            lines.append(f"DB error: {r['error']}")
+        else:
+            lines.append(
+                f"{r['symbol']:<8} {r['readings']:>8}  {r['first_ago_h']:>14}  {r['last_ago_m']:>12}"
+            )
+    lines.append("")
+    lines.append(f"Total symbols: {len(rows)}  |  Min readings needed for IV Rank: 5")
+    return "\n".join(lines), 200, {"Content-Type": "text/plain"}
+
+
 # =========================
 # ADMIN UPLOAD
 # =========================

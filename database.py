@@ -358,3 +358,36 @@ def get_iv_rank(symbol: str):
 
     except Exception:
         return None
+
+
+def get_iv_status():
+    """Return per-symbol iv_history reading counts for the /admin/iv-status diagnostic."""
+    import time
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute(
+            """
+            SELECT symbol, COUNT(*) as readings,
+                   MIN(recorded_at) as first_at,
+                   MAX(recorded_at) as last_at
+            FROM iv_history
+            GROUP BY symbol
+            ORDER BY readings DESC
+            """
+        )
+        rows = c.fetchall()
+        conn.close()
+        now = time.time()
+        result = []
+        for row in rows:
+            symbol, readings, first_at, last_at = row
+            result.append({
+                "symbol": symbol,
+                "readings": readings,
+                "first_ago_h": round((now - first_at) / 3600, 1) if first_at else None,
+                "last_ago_m": round((now - last_at) / 60, 1) if last_at else None,
+            })
+        return result
+    except Exception as e:
+        return [{"error": str(e)}]
