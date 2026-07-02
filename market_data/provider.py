@@ -1,6 +1,7 @@
 # market_data/provider.py
 import json
 import logging
+import math
 import os
 import threading
 import time
@@ -8,7 +9,7 @@ import time
 import pandas as pd
 import yfinance as yf
 
-from database import get_cache, set_cache
+from database import get_cache, set_cache, record_iv
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,15 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> float | None:
     return round(float(rsi.iloc[-1]), 2)
 
 
+def calculate_realized_vol(close: pd.Series, window: int = 30) -> float | None:
+    if len(close) < window + 1:
+        return None
+    log_returns = close.pct_change().dropna()
+    if len(log_returns) < window:
+        return None
+    return round(float(log_returns.tail(window).std() * math.sqrt(252)), 6)
+
+
 def safe_float(value):
     try:
         return round(float(value), 2)
@@ -125,6 +135,14 @@ def fetch_snapshot(symbol: str) -> dict:
         }
 
         _save_snapshot_cache(symbol, snapshot)
+
+        try:
+            vol = calculate_realized_vol(close)
+            if vol:
+                record_iv(symbol, vol)
+        except Exception:
+            pass
+
         return snapshot
 
     except Exception as e:
