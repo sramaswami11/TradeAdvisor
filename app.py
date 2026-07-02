@@ -427,6 +427,49 @@ def admin_cc_debug():
         return f"Error scanning {symbol}: {e}", 500
 
 
+@app.route("/admin/test-email")
+def admin_test_email():
+    """Send a sample digest email to the logged-in admin to verify Mailjet delivery."""
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    from email_utils import send_email, ENABLE_EMAIL
+    from digest import _build_email
+
+    if not ENABLE_EMAIL:
+        return "ENABLE_EMAIL is false — set it to true on Render first.", 400
+
+    sample_csp = [
+        {"symbol": "AAPL", "strike": 210, "expiry": "2026-07-18", "dte": 16,
+         "bid": 2.45, "annualized": 26.1, "distance_pct": -4.2,
+         "score": 9, "recommendation": "STRONG"},
+        {"symbol": "SPY",  "strike": 545, "expiry": "2026-07-18", "dte": 16,
+         "bid": 3.10, "annualized": 21.3, "distance_pct": -2.8,
+         "score": 7, "recommendation": "GOOD"},
+    ]
+    sample_cc = [
+        {"symbol": "MSFT", "strike": 470, "expiry": "2026-07-18", "dte": 16,
+         "bid": 3.80, "annualized": 29.4, "distance_pct": 3.1,
+         "score": 8, "recommendation": "STRONG"},
+        {"symbol": "NVDA", "strike": 145, "expiry": "2026-07-18", "dte": 16,
+         "bid": 2.90, "annualized": 24.7, "distance_pct": 4.5,
+         "score": 7, "recommendation": "GOOD"},
+    ]
+
+    to_email = user.get("email")
+    subject = "[TEST] TradeAdvisor · Sample Digest Email"
+    html = _build_email(sample_csp, sample_cc)
+
+    try:
+        send_email(to_email, subject, html)
+        return f"Test digest sent to {to_email} — check your inbox.", 200
+    except Exception as e:
+        return f"Send failed: {e}", 500
+
+
 @app.route("/admin/iv-status")
 def admin_iv_status():
     if "user_id" not in session:
