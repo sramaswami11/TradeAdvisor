@@ -2,6 +2,65 @@
 
 ---
 
+## Session: 2026-07-02
+
+### 1. Digest Subscription — Committed & Pushed — DONE (commit `a31194e`)
+
+The 2026-07-01 session work (digest opt-in toggle) had never been committed. Ran 64 tests (all passing), committed, and pushed. Deployed to Render.
+
+---
+
+### 2. `/admin/iv-status` Diagnostic Route — DONE (commit `e9784da`)
+
+Added route that queries `iv_history` reading counts per symbol and returns a plain-text table showing readings, first/last timestamps. Carried over from three prior sessions. Confirmed on Render: **`iv_history` table is completely empty.**
+
+---
+
+### 3. IV History Empty — Root Cause Diagnosed & Fixed (commit `d337105`)
+
+**Root cause:** `record_iv` in `options_engine.py` only fires when `atm_iv` is set, which requires at least one contract with `impliedVolatility > 0`. Yahoo Finance returns `impliedVolatility = 0` on Render's data center IPs under rate limiting. So options scans run and produce bid/ask results, but IV is always 0 → `atm_iv` stays `None` → `record_iv` never called → `iv_history` stays empty forever.
+
+**Fix:** Added `calculate_realized_vol()` to `market_data/provider.py`. Computes 30-day annualized realized volatility from the 1-year price history already fetched by `fetch_snapshot`. Calls `record_iv(symbol, vol)` on every fresh snapshot fetch (every 15 min per symbol, triggered by dashboard loads). Works entirely independently of options data or rate limiting.
+
+**Scale:** Realized vol is in decimal form (e.g., 0.254 = 25.4%) — same scale as yfinance `impliedVolatility`, so IV Rank formula is compatible.
+
+**Tests:** 4 new tests in `test_provider.py` — 68 total, all passing.
+
+---
+
+### 4. `/admin/test-email` Route — DONE (commit `d2698f5`)
+
+Added admin route that sends a hardcoded sample digest (2 CSP + 2 CC rows) to the logged-in admin's email. Bypasses scan cache entirely — useful for verifying Mailjet delivery when `top_csp/cc_cache` are empty (e.g. fresh Render instance). Subject prefixed `[TEST]` to distinguish from real sends.
+
+---
+
+### 5. UptimeRobot Keep-Alive — SET UP
+
+Configured free UptimeRobot monitor pinging `https://tradeadvisor-hpfq.onrender.com` every 5 minutes. Prevents Render free-tier spin-downs. Ensures background scanner runs continuously and dashboard snapshot fetches fire regularly to accumulate IV readings.
+
+---
+
+## Pending for Next Session
+
+### Verify IV readings are accumulating
+Check `/admin/iv-status` — should show 5+ readings per symbol after a few hours of UptimeRobot pings. Once 5 readings exist per symbol, IV Rank will display on CSP/CC pages.
+
+### Register additional digest recipients
+Sign into Render app with `sramaswami2021@gmail.com` and `sramaswami2025@gmail.com` to register them as users. They'll receive the digest automatically once registered.
+
+### P4 — IV Rank scoring integration
+Once iv_history has 2+ weeks of data, plug IV Rank into CSP/CC scoring: +1 if rank ≥ 50, +2 if rank ≥ 70. Currently display-only.
+
+---
+
+## Commits This Session (2026-07-02)
+- `a31194e` — Add digest subscription/unsubscription toggle for users
+- `e9784da` — Add /admin/iv-status diagnostic route for IV Rank accumulation
+- `d2698f5` — Add /admin/test-email route to verify Mailjet delivery independently of scan cache
+- `d337105` — Record realized vol from price history to seed iv_history reliably
+
+---
+
 ## Session: 2026-07-01
 
 ### 1. Digest Subscription / Unsubscription — DONE
