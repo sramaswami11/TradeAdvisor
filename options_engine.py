@@ -18,7 +18,7 @@ import yfinance as yf
 from datetime import datetime, date, timedelta
 
 from trade_advisor import StrategyEngine
-from market_data.provider import calculate_rsi, _yf_semaphore
+from market_data.provider import calculate_rsi, calculate_realized_vol, _yf_semaphore
 from database import get_cache, set_cache, record_iv, get_iv_rank
 
 
@@ -100,6 +100,14 @@ class OptionsEngine:
             # Build indicators from same hist
             # -----------------------------------
             data = self._build_indicator_data_from_hist(hist, price)
+
+            try:
+                vol = calculate_realized_vol(hist["Close"])
+                if vol:
+                    record_iv(symbol, vol)
+            except Exception:
+                pass
+
             del hist  # free 1y of OHLCV data before options fetch
 
             if not data:
