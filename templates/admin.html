@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Admin — Trade Advisor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+</head>
+<body>
+
+<header class="site-header">
+    <a href="{{ url_for('dashboard') }}" class="brand">Trade Advisor</a>
+    <nav>
+        <a href="{{ url_for('top_csp') }}" class="nav-link">Top CSP</a>
+        <a href="{{ url_for('top_cc') }}"  class="nav-link">Top CC</a>
+        <a href="{{ url_for('logout') }}" class="nav-link muted">Logout</a>
+    </nav>
+</header>
+
+<div class="container">
+
+    <h1 class="page-title">Admin Dashboard</h1>
+
+    {% if msg %}
+    <div class="admin-msg">{{ msg }}</div>
+    {% endif %}
+
+    <div class="admin-grid">
+
+        <!-- Scan Caches -->
+        <div class="admin-card">
+            <h3>Scan Caches</h3>
+            <table class="admin-table">
+                <tr>
+                    <td>CSP</td>
+                    <td>
+                        {% if csp_cache.status == 'ok' %}
+                            <span class="ok">{{ csp_cache.count }} opps</span> · {{ csp_cache.age_s }}s old
+                        {% else %}
+                            <span class="empty">empty</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                <tr>
+                    <td>CC</td>
+                    <td>
+                        {% if cc_cache.status == 'ok' %}
+                            <span class="ok">{{ cc_cache.count }} opps</span> · {{ cc_cache.age_s }}s old
+                        {% else %}
+                            <span class="empty">empty</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+            <div class="admin-actions">
+                <a class="admin-btn admin-btn-danger" href="{{ url_for('admin_clear_cache') }}">Clear Cache</a>
+            </div>
+        </div>
+
+        <!-- IV Rank -->
+        <div class="admin-card">
+            <h3>IV Rank Accumulation <span class="admin-note">(need {{ iv_min_samples }}+ per symbol)</span></h3>
+            {% if iv_rows %}
+            <table class="admin-table">
+                <thead><tr><th>Symbol</th><th>Readings</th><th>Last (m ago)</th></tr></thead>
+                <tbody>
+                {% for r in iv_rows %}
+                <tr>
+                    <td>{{ r.symbol }}</td>
+                    <td>
+                        {% if r.readings >= iv_min_samples %}
+                            <span class="ok">{{ r.readings }} ✓</span>
+                        {% else %}
+                            {{ r.readings }}/{{ iv_min_samples }}
+                        {% endif %}
+                    </td>
+                    <td>{{ r.last_ago_m }}</td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">No readings yet.</p>
+            {% endif %}
+            <div class="admin-actions">
+                <a class="admin-btn" href="{{ url_for('admin_iv_status') }}" target="_blank">Raw IV Status</a>
+            </div>
+        </div>
+
+        <!-- Digest -->
+        <div class="admin-card">
+            <h3>Digest</h3>
+            <table class="admin-table">
+                <tr>
+                    <td>Email</td>
+                    <td>{% if enable_email %}<span class="ok">enabled</span>{% else %}<span class="empty">disabled</span>{% endif %}</td>
+                </tr>
+                <tr>
+                    <td>Subscribers</td>
+                    <td>
+                        {% if digest_users %}
+                            {{ digest_users|length }}
+                            <span class="admin-note">({{ digest_users|map(attribute='email')|join(', ') }})</span>
+                        {% else %}
+                            <span class="empty">none</span>
+                        {% endif %}
+                    </td>
+                </tr>
+            </table>
+            <div class="admin-actions">
+                <a class="admin-btn" href="{{ url_for('admin_send_digest') }}">Send Digest</a>
+                <a class="admin-btn" href="{{ url_for('admin_test_email') }}">Test Email</a>
+            </div>
+        </div>
+
+        <!-- CC Debug -->
+        <div class="admin-card">
+            <h3>CC Debug <span class="admin-note">(synchronous ~30s scan)</span></h3>
+            <form method="GET" action="{{ url_for('admin_cc_debug') }}" target="_blank" class="admin-form">
+                <input type="text" name="symbol" value="AAPL" class="admin-input">
+                <button type="submit" class="admin-btn">Scan</button>
+            </form>
+            <div class="admin-actions" style="margin-top:8px;">
+                <a class="admin-btn" href="{{ url_for('admin_cc_status') }}" target="_blank">CC Cache Raw</a>
+                <a class="admin-btn" href="{{ url_for('admin_upload_users') }}">Upload Users</a>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+</body>
+</html>

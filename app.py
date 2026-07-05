@@ -28,6 +28,10 @@ from database import (
     move_ticker as db_move_ticker,
     update_user_name_if_missing,
     set_digest_opt_in,
+    get_digest_users,
+    get_iv_status,
+    get_cache,
+    set_cache,
 )
 
 from top_csp import get_top_csp_opportunities
@@ -286,6 +290,7 @@ def dashboard():
         user=user,
         guest=is_guest,
         digest_opt_in=False if is_guest else user.get("digest_opt_in", True),
+        admin=not is_guest and is_admin(user),
     )
 
 
@@ -349,6 +354,42 @@ def toggle_digest():
 # ADMIN UTILITIES
 # =========================
 
+@app.route("/admin")
+def admin_dashboard():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    import time, json as _json
+    from email_utils import ENABLE_EMAIL
+
+    def _cache_info(key):
+        row = get_cache(key)
+        if not row:
+            return {"status": "empty", "count": 0, "age_s": None}
+        age = int(time.time() - row["timestamp"])
+        try:
+            opps = _json.loads(row["value"])
+            return {"status": "ok", "count": len(opps), "age_s": age}
+        except Exception:
+            return {"status": "error", "count": 0, "age_s": age}
+
+    msg = request.args.get("msg", "")
+    return render_template(
+        "admin.html",
+        user=user,
+        msg=msg,
+        csp_cache=_cache_info("top_csp_cache"),
+        cc_cache=_cache_info("top_cc_cache"),
+        iv_rows=get_iv_status(),
+        iv_min_samples=5,
+        digest_users=get_digest_users(),
+        enable_email=ENABLE_EMAIL,
+    )
+
+
 @app.route("/admin/clear-cache")
 def admin_clear_cache():
     if "user_id" not in session:
@@ -357,12 +398,11 @@ def admin_clear_cache():
     if not is_admin(user):
         abort(403)
 
-    from database import set_cache
     import time
     ts = time.time()
     set_cache("top_csp_cache", "[]", ts)
     set_cache("top_cc_cache", "[]", ts)
-    return "top_csp_cache and top_cc_cache cleared — background scans will repopulate within a few minutes.", 200
+    return redirect(url_for("admin_dashboard", msg="Caches cleared — background scans will repopulate within a few minutes."))
 
 
 @app.route("/admin/send-digest")
@@ -383,13 +423,10 @@ def admin_send_digest():
     cc = get_top_cc_opportunities()
 
     if not csp and not cc:
-        return (
-            "Both caches are empty — background scan just started. "
-            "Wait 10-15 minutes for the scan to finish, then try again."
-        ), 202
+        return redirect(url_for("admin_dashboard", msg="Both caches are empty — background scan just started. Wait 10–15 minutes, then try again."))
 
     threading.Thread(target=_do_send, daemon=True, name="digest-manual").start()
-    return "Digest send triggered — check Render logs and your inbox in ~30s.", 200
+    return redirect(url_for("admin_dashboard", msg="Digest send triggered — check your inbox in ~30s."))
 
 
 @app.route("/admin/cc-status")
@@ -475,9 +512,9 @@ def admin_test_email():
 
     try:
         send_email(to_email, subject, html)
-        return f"Test digest sent to {to_email} — check your inbox.", 200
+        return redirect(url_for("admin_dashboard", msg=f"Test digest sent to {to_email} — check your inbox."))
     except Exception as e:
-        return f"Send failed: {e}", 500
+        return redirect(url_for("admin_dashboard", msg=f"Send failed: {e}"))
 
 
 @app.route("/admin/iv-status")

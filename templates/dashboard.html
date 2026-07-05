@@ -17,6 +17,7 @@
         {% if session.get('guest') %}
         <a href="{{ url_for('login') }}"  class="nav-link">Sign in</a>
         {% else %}
+        {% if admin %}<a href="{{ url_for('admin_dashboard') }}" class="nav-link">Admin</a>{% endif %}
         <a href="{{ url_for('logout') }}" class="nav-link muted">Logout</a>
         {% endif %}
     </nav>
