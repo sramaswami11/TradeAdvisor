@@ -25,6 +25,7 @@ from database import (
     get_tickers_for_user,
     add_ticker_to_user,
     remove_ticker_from_user,
+    move_ticker as db_move_ticker,
     update_user_name_if_missing,
     set_digest_opt_in,
 )
@@ -320,6 +321,15 @@ def remove_ticker(symbol):
         return redirect(url_for("login"))
     if not session.get("guest"):
         remove_ticker_from_user(session["user_id"], normalize_symbol(symbol))
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/ticker/move/<symbol>/<direction>")
+def move_ticker(symbol, direction):
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    if direction in ("up", "down"):
+        db_move_ticker(session["user_id"], normalize_symbol(symbol), direction)
     return redirect(url_for("dashboard"))
 
 

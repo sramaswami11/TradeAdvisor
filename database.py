@@ -42,14 +42,15 @@ def init_db():
                 id SERIAL PRIMARY KEY,
                 user_id INTEGER NOT NULL,
                 symbol TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0,
                 UNIQUE(user_id, symbol),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
-        # Migration: add digest_opt_in to existing tables
-        c.execute("""
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_opt_in BOOLEAN DEFAULT TRUE
-        """)
+        c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS digest_opt_in BOOLEAN DEFAULT TRUE")
+        c.execute("ALTER TABLE user_tickers ADD COLUMN IF NOT EXISTS sort_order INTEGER DEFAULT 0")
+        # Seed sort_order for existing rows that haven't been ordered yet
+        c.execute("UPDATE user_tickers SET sort_order = id WHERE sort_order = 0")
     else:
         c.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -64,15 +65,21 @@ def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 symbol TEXT NOT NULL,
+                sort_order INTEGER DEFAULT 0,
                 UNIQUE(user_id, symbol),
                 FOREIGN KEY(user_id) REFERENCES users(id)
             )
         """)
-        # Migration: add digest_opt_in to existing tables
         try:
             c.execute("ALTER TABLE users ADD COLUMN digest_opt_in BOOLEAN DEFAULT 1")
         except Exception:
-            pass  # Column already exists
+            pass
+        try:
+            c.execute("ALTER TABLE user_tickers ADD COLUMN sort_order INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        # Seed sort_order for existing rows that haven't been ordered yet
+        c.execute("UPDATE user_tickers SET sort_order = id WHERE sort_order = 0")
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS cache (
@@ -160,7 +167,7 @@ def get_tickers_for_user(user_id: int):
     conn = get_connection()
     c = conn.cursor()
     c.execute(
-        f"SELECT symbol FROM user_tickers WHERE user_id = {_P} ORDER BY symbol",
+        f"SELECT symbol FROM user_tickers WHERE user_id = {_P} ORDER BY sort_order, id",
         (user_id,)
     )
     rows = c.fetchall()
@@ -173,13 +180,13 @@ def add_ticker_to_user(user_id: int, symbol: str):
     c = conn.cursor()
     if _POSTGRES:
         c.execute(
-            f"INSERT INTO user_tickers (user_id, symbol) VALUES ({_P}, {_P}) ON CONFLICT DO NOTHING",
-            (user_id, symbol)
+            f"INSERT INTO user_tickers (user_id, symbol, sort_order) VALUES ({_P}, {_P}, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM user_tickers WHERE user_id = {_P})) ON CONFLICT DO NOTHING",
+            (user_id, symbol, user_id)
         )
     else:
         c.execute(
-            f"INSERT OR IGNORE INTO user_tickers (user_id, symbol) VALUES ({_P}, {_P})",
-            (user_id, symbol)
+            f"INSERT OR IGNORE INTO user_tickers (user_id, symbol, sort_order) VALUES ({_P}, {_P}, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM user_tickers WHERE user_id = {_P}))",
+            (user_id, symbol, user_id)
         )
     conn.commit()
     conn.close()
@@ -192,6 +199,37 @@ def remove_ticker_from_user(user_id: int, symbol: str):
         f"DELETE FROM user_tickers WHERE user_id = {_P} AND symbol = {_P}",
         (user_id, symbol)
     )
+    conn.commit()
+    conn.close()
+
+
+def move_ticker(user_id: int, symbol: str, direction: str):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute(
+        f"SELECT symbol, sort_order FROM user_tickers WHERE user_id = {_P} ORDER BY sort_order, id",
+        (user_id,)
+    )
+    rows = c.fetchall()
+    symbols = [r[0] for r in rows]
+
+    if symbol not in symbols:
+        conn.close()
+        return
+
+    idx = symbols.index(symbol)
+
+    if direction == "up" and idx > 0:
+        curr_ord, prev_ord = rows[idx][1], rows[idx - 1][1]
+        prev_sym = rows[idx - 1][0]
+        c.execute(f"UPDATE user_tickers SET sort_order = {_P} WHERE user_id = {_P} AND symbol = {_P}", (prev_ord, user_id, symbol))
+        c.execute(f"UPDATE user_tickers SET sort_order = {_P} WHERE user_id = {_P} AND symbol = {_P}", (curr_ord, user_id, prev_sym))
+    elif direction == "down" and idx < len(rows) - 1:
+        curr_ord, next_ord = rows[idx][1], rows[idx + 1][1]
+        next_sym = rows[idx + 1][0]
+        c.execute(f"UPDATE user_tickers SET sort_order = {_P} WHERE user_id = {_P} AND symbol = {_P}", (next_ord, user_id, symbol))
+        c.execute(f"UPDATE user_tickers SET sort_order = {_P} WHERE user_id = {_P} AND symbol = {_P}", (curr_ord, user_id, next_sym))
+
     conn.commit()
     conn.close()
 

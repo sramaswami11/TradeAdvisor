@@ -149,6 +149,11 @@ tbody tr:last-child td { border-bottom: none; }
 
 .remove { color: #d1242f; font-size: 16px; text-decoration: none; }
 
+.row-controls { white-space: nowrap; }
+.move-btn { color: #888; font-size: 11px; text-decoration: none; margin-right: 2px; }
+.move-btn:hover { color: #333; }
+.move-btn.disabled { color: #ddd; cursor: default; }
+
 .add-box {
     background: white;
     padding: 12px 14px;

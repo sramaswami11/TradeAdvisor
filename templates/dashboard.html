@@ -83,7 +83,13 @@
                     <td><a class="action-link" href="{{ url_for('dashboard', view=t.symbol) }}">View</a></td>
                     <td><a class="action-link" href="{{ url_for('view_csp', symbol=t.symbol) }}">CSP</a></td>
                     <td><a class="action-link" href="{{ url_for('view_cc',  symbol=t.symbol) }}">CC</a></td>
-                    <td>{% if not guest %}<a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a>{% endif %}</td>
+                    <td class="row-controls">
+                        {% if not guest %}
+                        {% if not loop.first %}<a class="move-btn" href="{{ url_for('move_ticker', symbol=t.symbol, direction='up') }}">▲</a>{% else %}<span class="move-btn disabled">▲</span>{% endif %}
+                        {% if not loop.last %}<a class="move-btn" href="{{ url_for('move_ticker', symbol=t.symbol, direction='down') }}">▼</a>{% else %}<span class="move-btn disabled">▼</span>{% endif %}
+                        <a class="remove" href="{{ url_for('remove_ticker', symbol=t.symbol) }}">✖</a>
+                        {% endif %}
+                    </td>
                 </tr>
                 {% endfor %}
             </tbody>
