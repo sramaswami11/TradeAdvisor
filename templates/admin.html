@@ -20,7 +20,13 @@
 
 <div class="container">
 
-    <h1 class="page-title">Admin Dashboard</h1>
+    <h1 class="page-title">Admin Dashboard
+        {% if db_backend == 'postgresql' %}
+        <span class="badge badge-strong" style="font-size:12px;vertical-align:middle;">PostgreSQL</span>
+        {% else %}
+        <span class="badge badge-weak" style="font-size:12px;vertical-align:middle;">SQLite — LOCAL</span>
+        {% endif %}
+    </h1>
 
     {% if msg %}
     <div class="admin-msg">{{ msg }}</div>

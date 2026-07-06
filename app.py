@@ -376,6 +376,7 @@ def admin_dashboard():
         except Exception:
             return {"status": "error", "count": 0, "age_s": age}
 
+    from database import _POSTGRES
     msg = request.args.get("msg", "")
     return render_template(
         "admin.html",
@@ -387,6 +388,7 @@ def admin_dashboard():
         iv_min_samples=5,
         digest_users=get_digest_users(),
         enable_email=ENABLE_EMAIL,
+        db_backend="postgresql" if _POSTGRES else "sqlite",
     )
 
 
