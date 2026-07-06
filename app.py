@@ -429,6 +429,26 @@ def admin_send_digest():
     return redirect(url_for("admin_dashboard", msg="Digest send triggered — check your inbox in ~30s."))
 
 
+@app.route("/admin/add-subscriber", methods=["POST"])
+def admin_add_subscriber():
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    email = request.form.get("email", "").strip().lower()
+    if not EMAIL_RE.match(email):
+        return redirect(url_for("admin_dashboard", msg=f"Invalid email: {email}"))
+
+    create_user(email=email)
+    sub = get_user_by_email(email)
+    if sub and not sub.get("digest_opt_in"):
+        set_digest_opt_in(sub["id"], True)
+
+    return redirect(url_for("admin_dashboard", msg=f"Subscriber added: {email}"))
+
+
 @app.route("/admin/cc-status")
 def admin_cc_status():
     if "user_id" not in session:

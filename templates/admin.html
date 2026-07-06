@@ -108,6 +108,10 @@
                     </td>
                 </tr>
             </table>
+            <form method="POST" action="{{ url_for('admin_add_subscriber') }}" class="admin-form" style="margin-top:10px;">
+                <input type="email" name="email" placeholder="add subscriber email" required class="admin-input" style="width:200px;">
+                <button type="submit" class="admin-btn">Add</button>
+            </form>
             <div class="admin-actions">
                 <a class="admin-btn" href="{{ url_for('admin_send_digest') }}">Send Digest</a>
                 <a class="admin-btn" href="{{ url_for('admin_test_email') }}">Test Email</a>
