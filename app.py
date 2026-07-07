@@ -45,7 +45,7 @@ _SCAN_REASON_MESSAGES = {
     "no_indicators": "Insufficient price history to calculate indicators (need 200+ trading days).",
     "below_dma":     "Stock is in a downtrend (below both 50-day and 200-day moving averages) — not ideal for selling premium.",
     "no_expirations": "No option expirations found within the scan window (up to 45 days).",
-    "no_strikes":    "No contracts found in the 0.25–0.30 delta range within the scan window.",
+    "no_strikes":    "No qualifying contracts found within the scan window — options data may be unavailable or the chain is illiquid right now.",
     "scan_error":    "Scan error — Yahoo Finance may be rate-limiting. Try again in a few minutes.",
 }
 

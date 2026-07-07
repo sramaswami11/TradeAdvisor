@@ -247,26 +247,16 @@ class OptionsEngine:
                         annualized = yield_pct * (365 / max(dte, 1))
 
                         # -----------------------------------
-                        # Delta filter — primary 0.25-0.30, fallback 0.20-0.35
+                        # Delta filter — primary 0.25-0.30; anything else that
+                        # passed the OTM + liquidity filters goes to fallback.
                         # CSP: put delta (negative); CC: call delta (positive)
                         # -----------------------------------
                         if side == "csp":
                             delta = self._put_delta(price, strike, dte, iv)
-                            if delta is not None:
-                                in_primary = -0.30 <= delta <= -0.25
-                                in_fallback = -0.35 <= delta <= -0.20
-                            else:
-                                in_primary = in_fallback = True
+                            in_primary = delta is None or (-0.30 <= delta <= -0.25)
                         else:
                             delta = self._call_delta(price, strike, dte, iv)
-                            if delta is not None:
-                                in_primary = 0.25 <= delta <= 0.30
-                                in_fallback = 0.20 <= delta <= 0.35
-                            else:
-                                in_primary = in_fallback = True
-
-                        if not in_fallback:
-                            continue
+                            in_primary = delta is None or (0.25 <= delta <= 0.30)
 
                         score = (
                             self._score_csp(signals, yield_pct, annualized, distance_pct)
