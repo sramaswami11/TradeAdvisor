@@ -42,7 +42,8 @@
                     <td>CSP</td>
                     <td>
                         {% if csp_cache.status == 'ok' %}
-                            <span class="ok">{{ csp_cache.count }} opps</span> · {{ csp_cache.age_s }}s old
+                            <span class="ok">{{ csp_cache.count }} opps</span><br>
+                            <span class="admin-note">{{ (csp_cache.age_s // 60) }}m old</span>
                         {% else %}
                             <span class="empty">empty</span>
                         {% endif %}
@@ -52,7 +53,8 @@
                     <td>CC</td>
                     <td>
                         {% if cc_cache.status == 'ok' %}
-                            <span class="ok">{{ cc_cache.count }} opps</span> · {{ cc_cache.age_s }}s old
+                            <span class="ok">{{ cc_cache.count }} opps</span><br>
+                            <span class="admin-note">{{ (cc_cache.age_s // 60) }}m old</span>
                         {% else %}
                             <span class="empty">empty</span>
                         {% endif %}
