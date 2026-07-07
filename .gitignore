@@ -3,3 +3,5 @@
    *.db
    __pycache__/
    venv/
+sellToFriends.md
+response.md
