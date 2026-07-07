@@ -2,6 +2,218 @@
 
 ---
 
+## Session: 2026-07-06
+
+### 1. PostgreSQL Was Never Connected — Root Cause of All Data Loss
+
+**Problem:** Render's `DATABASE_URL` env var was set to `sqlite:///tradeadvisor.db` (manually, at some point during initial setup). The app's `load_dotenv()` picked up this value, so the live Render app was writing to ephemeral SQLite on disk — not PostgreSQL. Every redeploy wiped all data. This explained why subscribers, watchlist symbols, and IV readings kept disappearing.
+
+**Fix:**
+- Created a new Render PostgreSQL service (`tradeadvisor-db`)
+- Set `DATABASE_URL` on the **tradeadvisor** web service to the Internal Database URL from that PostgreSQL service
+- Admin page now shows green **PostgreSQL** badge confirming the correct backend
+
+**Commits:** `78821bf` — DB backend indicator on admin dashboard (PostgreSQL vs SQLite)
+
+---
+
+### 2. Admin "Add Subscriber" Form — DONE (commit `0d974a4`)
+
+**Problem:** Adding digest recipients required logging into the Render app with each email address, which silently wrote to the local SQLite instead of Render PostgreSQL when done from localhost.
+
+**Fix:** Added `/admin/add-subscriber` POST route + email input form directly on the `/admin` Digest card. Admin can now add any email address as a digest subscriber without requiring a login flow.
+
+---
+
+### 3. DB Backend Indicator on Admin Dashboard — DONE (commit `78821bf`)
+
+Added green **PostgreSQL** / red **SQLite — LOCAL** badge next to the "Admin Dashboard" heading. Prevents silently writing to the wrong database when running locally vs on Render.
+
+---
+
+### 4. Login Page Tagline — DONE (commit `47e5ef7`)
+
+Changed subtitle from "Sign in to manage your tickers" to "Options scanner for cash-secured puts & covered calls on your watchlist" — gives first-time visitors context before signing up.
+
+---
+
+### 5. DATABASE_URL Removed from Local .env
+
+`DATABASE_URL=sqlite:///tradeadvisor.db` was committed to the repo in `.env`. Removed the value and replaced with a comment explaining the correct behavior: app falls back to SQLite automatically when unset locally; Render sets it via the environment dashboard.
+
+---
+
+## Current State After This Session
+
+- **PostgreSQL:** Live and connected on Render ✓
+- **3 digest subscribers:** tradeadvisor2025@gmail.com, sramaswami2021@gmail.com, sramaswami2025@gmail.com ✓
+- **8 watchlist symbols:** AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA ✓
+- **Scan cache:** Warming up (background scanner running) — Send Digest once CSP/CC show data
+- **IV readings:** Will accumulate from scratch on new PostgreSQL — need 5+ per symbol for IV Rank
+
+---
+
+## Pending for Next Session
+
+### Verify digest sends to 3 users
+After scan cache warms (~10–15 min), hit **Send Digest** from `/admin`. Confirm Render logs show `"Digest sent to 3 user(s)"` and email arrives at all three addresses.
+
+### Verify IV readings reach 5+ per symbol
+Check `/admin/iv-status` after a few hours. Need 5+ readings per symbol for IV Rank to display on CSP/CC pages. Scanner records 2 readings per symbol per hourly cycle (CSP + CC).
+
+### P4 — IV Rank scoring integration (~2026-07-18)
+Once `iv_history` has 2 weeks of data, add `+1` if IV Rank ≥ 50, `+2` if IV Rank ≥ 70 to `_score_csp` / `_score_cc` in `options_engine.py`.
+
+---
+
+## Commits This Session (2026-07-06)
+- `0d974a4` — Add admin form to add digest subscribers directly from /admin
+- `47e5ef7` — Update login page tagline to describe the app
+- `78821bf` — Show DB backend (PostgreSQL vs SQLite) on admin dashboard
+
+---
+
+## Session: 2026-07-05
+
+### 1. Admin Dashboard — Verified Working
+
+Tested the consolidated `/admin` page live on Render. Card grid loads correctly (Scan Caches, IV Rank Accumulation, Digest, CC Debug). Action buttons redirect back to `/admin?msg=...` with confirmation messages — no bare text returns. No issues found.
+
+---
+
+### 2. IV Scanner — Confirmed Active, Watchlist Gap Found
+
+Checked `/admin/iv-status` during this session:
+
+```
+Symbol   Readings   First (h ago)  Last (m ago)
+--------------------------------------------------
+NVDA            1             0.0           0.4
+MSFT            1             0.0           0.4
+
+Total symbols: 2  |  Min readings needed for IV Rank: 5
+```
+
+**Findings:**
+- Scanner IS recording realized vol (commit `764f8a1` confirmed working)
+- Only NVDA and MSFT in `user_tickers` at time of check — AAPL was also present on dashboard but hadn't yet produced a reading
+- Readings were brand-new (0.4 min old) — scanner had just completed its first cycle of the session
+
+**Fix applied (manual):** Added `SPY`, `GOOGL`, `AMZN`, `META`, `TSLA` to watchlist via dashboard UI. These will be picked up on the next hourly scanner cycle.
+
+---
+
+## Pending for Next Session (Monday 2026-07-07)
+
+### Verify digest sends to 3 users (highest priority)
+Markets reopen Monday. After scan cache warms (~10–15 min of trading), hit **Send Digest** from `/admin`. Confirm Render logs show `"Digest sent to 3 user(s)"` and email arrives at all three addresses: `tradeadvisor2025@gmail.com`, `sramaswami2021@gmail.com`, `sramaswami2025@gmail.com`.
+
+### Verify IV readings reach 5+ per symbol
+Check IV Rank card on `/admin` after a few hours of trading. Watchlist now has 8 symbols (AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA). All 8 should appear in `/admin/iv-status`. Once any symbol hits 5 readings, IV Rank displays on its CSP/CC page.
+
+### P4 — IV Rank scoring integration
+Deferred until ~2026-07-18 (needs 2 weeks of `iv_history` data). Once ready: +1 if rank ≥ 50, +2 if rank ≥ 70 to CSP/CC score.
+
+---
+
+## Commits This Session (2026-07-05)
+- None — verification session only
+
+---
+
+## Session: 2026-07-04
+
+### 1. IV Readings — Background Scanner Now Records Passively (commit `764f8a1`)
+
+**Problem:** `record_iv` was only called from `fetch_snapshot` in `provider.py`, which fires on dashboard loads. UptimeRobot pings unauthenticated → login redirect → no snapshot fetch → IV readings only accumulated when a real user visited the dashboard. After hours of uptime, symbols still had 0–1 readings.
+
+**Fix:** Added `calculate_realized_vol` call in `_find_opportunities` in `options_engine.py`, right after `_build_indicator_data_from_hist` and before `del hist`. The 1-year price history is already in memory at that point — computing realized vol is free. Every background scanner cycle (top_csp + top_cc, hourly, all watchlist symbols) now writes an `iv_history` row regardless of dashboard visits.
+
+**Import added:** `calculate_realized_vol` imported from `market_data.provider` in `options_engine.py`.
+
+**Tests:** All 68 passing.
+
+**Expected result:** Check `/admin/iv-status` in ~5 hours — should show 5+ readings per symbol, at which point IV Rank displays on CSP/CC pages.
+
+---
+
+### 2. Digest Recipients Registered — DONE (manual)
+
+Signed into the Render app with `sramaswami2021@gmail.com` and `sramaswami2025@gmail.com`. Both are now in the `users` table with `digest_opt_in = TRUE`. Future weekday 9:35 AM digests will go to all 3 registered users.
+
+**Pending verification:** `/admin/send-digest` returned "Both caches are empty — background scan just started" during this session. Re-test after scan warms up (~10–15 min after deploy) to confirm digest sends to 3 recipients and all 3 receive it.
+
+---
+
+## Pending for Next Session
+
+### Verify digest sends to 3 users
+After scan cache warms up, hit `/admin/send-digest` and check Render logs for `"Digest sent to 3 user(s)"`. Confirm email arrives at all three addresses.
+
+### Verify IV readings reach 5+ per symbol
+Check `/admin/iv-status` after a few hours. Once 5 readings exist per symbol, IV Rank will display on CSP/CC pages.
+
+### P4 — IV Rank scoring integration
+Once `iv_history` has 2+ weeks of data, plug IV Rank into CSP/CC scoring: +1 if rank ≥ 50, +2 if rank ≥ 70. Currently display-only.
+
+---
+
+### 3. Watchlist Reordering — DONE (commit `dc1c62a`)
+
+**Feature:** ▲ ▼ arrows on each dashboard row let users reorder their watchlist. First row ▲ and last row ▼ are shown greyed out (disabled).
+
+**Schema change:** Added `sort_order INTEGER DEFAULT 0` to `user_tickers`. Migration runs on startup: `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` (PostgreSQL) / try-except (SQLite), then `UPDATE user_tickers SET sort_order = id WHERE sort_order = 0` to seed existing rows.
+
+**Files changed:**
+- `database.py` — `sort_order` in CREATE TABLE; migration; `get_tickers_for_user` now `ORDER BY sort_order, id`; `add_ticker_to_user` sets `sort_order = MAX(sort_order)+1` per user; new `move_ticker(user_id, symbol, direction)` swaps sort_order with adjacent row
+- `app.py` — imported `move_ticker as db_move_ticker`; added `/ticker/move/<symbol>/<direction>` GET route
+- `templates/dashboard.html` — ▲ ▼ per row using `loop.first`/`loop.last`; combined with ✖ in last cell
+- `static/style.css` — `.move-btn`, `.move-btn.disabled`, `.row-controls` styles
+
+**All 68 tests passing.**
+
+---
+
+### 4. Admin Dashboard — DONE (commit `9a35596`)
+
+**Feature:** Consolidated `/admin` page replaces navigating to 5 separate bare-text URLs. Shows live status in a card grid and action buttons that redirect back with confirmation messages.
+
+**Cards:**
+- **Scan Caches** — CSP and CC cache count + age (or "empty"), with Clear Cache button
+- **IV Rank Accumulation** — per-symbol reading count, ✓ when ≥ 5, with Raw IV Status link
+- **Digest** — email enabled status, subscriber count + addresses, Send Digest + Test Email buttons
+- **CC Debug** — symbol input form → opens `/admin/cc-debug` in new tab; links to CC Cache Raw and Upload Users
+
+**Action route changes:** `admin_clear_cache`, `admin_send_digest`, `admin_test_email` now redirect to `/admin?msg=...` instead of returning bare text. `/admin/cc-debug` and `/admin/iv-status` unchanged (diagnostic data, not actions).
+
+**Admin nav link** added to dashboard header — visible only to the admin user (`ADMIN_EMAIL` env var match).
+
+**Files changed:** `app.py`, `templates/admin.html` (new), `templates/dashboard.html`, `static/style.css`
+
+**All 68 tests passing.**
+
+---
+
+## Pending for Next Session
+
+### Verify digest sends to 3 users
+Markets reopen Monday. Once scan caches warm up (options data available on trading days), hit **Send Digest** from `/admin` and confirm "Digest sent to 3 user(s)" in Render logs. All 3 addresses should receive it.
+
+### Verify IV readings reach 5+ per symbol
+Check IV Rank card on `/admin` after a few hours of trading. Background scanner now records realized vol on every hourly cycle. Once 5 readings per symbol, IV Rank displays on CSP/CC pages.
+
+### P4 — IV Rank scoring integration
+Once `iv_history` has 2+ weeks of data, plug IV Rank into CSP/CC scoring: +1 if rank ≥ 50, +2 if rank ≥ 70. Currently display-only.
+
+---
+
+## Commits This Session (2026-07-04)
+- `764f8a1` — Record realized vol in background scanner to accumulate IV readings passively
+- `dc1c62a` — Add watchlist reordering with up/down buttons
+- `9a35596` — Add consolidated admin dashboard at /admin
+
+---
+
 ## Session: 2026-07-02
 
 ### 1. Digest Subscription — Committed & Pushed — DONE (commit `a31194e`)
