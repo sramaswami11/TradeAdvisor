@@ -311,12 +311,14 @@ def view_csp(symbol):
         opportunities, scan_reason = [], "scan_error"
 
     scan_message = _SCAN_REASON_MESSAGES.get(scan_reason, "No qualifying opportunities found.")
+    delta_note = any(o.get("delta_widened") for o in opportunities)
 
     return render_template(
         "csp_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
         scan_message=scan_message,
+        delta_note=delta_note,
     )
 
 
@@ -661,12 +663,14 @@ def view_cc(symbol):
         opportunities, scan_reason = [], "scan_error"
 
     scan_message = _SCAN_REASON_MESSAGES.get(scan_reason, "No qualifying opportunities found.")
+    delta_note = any(o.get("delta_widened") for o in opportunities)
 
     return render_template(
         "cc_results.html",
         symbol=symbol.upper(),
         opportunities=opportunities,
         scan_message=scan_message,
+        delta_note=delta_note,
     )
 
 

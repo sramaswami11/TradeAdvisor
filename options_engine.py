@@ -134,6 +134,7 @@ class OptionsEngine:
 
             earnings_date = self._get_next_earnings(ticker)
             opportunities = []
+            fallback_opps = []
             atm_iv = None
             atm_iv_distance = float("inf")
 
@@ -246,18 +247,26 @@ class OptionsEngine:
                         annualized = yield_pct * (365 / max(dte, 1))
 
                         # -----------------------------------
-                        # Delta filter
-                        # CSP: put delta -0.25 to -0.30
-                        # CC:  call delta  0.25 to  0.30
+                        # Delta filter — primary 0.25-0.30, fallback 0.20-0.35
+                        # CSP: put delta (negative); CC: call delta (positive)
                         # -----------------------------------
                         if side == "csp":
                             delta = self._put_delta(price, strike, dte, iv)
-                            if delta is not None and not (-0.30 <= delta <= -0.25):
-                                continue
+                            if delta is not None:
+                                in_primary = -0.30 <= delta <= -0.25
+                                in_fallback = -0.35 <= delta <= -0.20
+                            else:
+                                in_primary = in_fallback = True
                         else:
                             delta = self._call_delta(price, strike, dte, iv)
-                            if delta is not None and not (0.25 <= delta <= 0.30):
-                                continue
+                            if delta is not None:
+                                in_primary = 0.25 <= delta <= 0.30
+                                in_fallback = 0.20 <= delta <= 0.35
+                            else:
+                                in_primary = in_fallback = True
+
+                        if not in_fallback:
+                            continue
 
                         score = (
                             self._score_csp(signals, yield_pct, annualized, distance_pct)
@@ -265,7 +274,7 @@ class OptionsEngine:
                             else self._score_cc(signals, yield_pct, annualized, distance_pct)
                         )
 
-                        opportunities.append({
+                        opp = {
                             "symbol": symbol,
                             "strike": round(strike, 2),
                             "expiry": expiry,
@@ -281,7 +290,13 @@ class OptionsEngine:
                             "earnings_warning": near_earnings,
                             "earnings_date": earnings_date.strftime("%Y-%m-%d") if earnings_date else None,
                             "iv_rank": None,  # stamped below
-                        })
+                            "delta_widened": False,
+                        }
+                        if in_primary:
+                            opportunities.append(opp)
+                        else:
+                            opp["delta_widened"] = True
+                            fallback_opps.append(opp)
 
                     except Exception:
                         pass
@@ -292,13 +307,14 @@ class OptionsEngine:
             iv_rank_data = get_iv_rank(symbol)
             iv_rank = iv_rank_data["iv_rank"] if iv_rank_data else None
 
-            for opp in opportunities:
+            result_opps = opportunities if opportunities else fallback_opps
+            for opp in result_opps:
                 opp["iv_rank"] = iv_rank
 
-            if not opportunities:
+            if not result_opps:
                 return [], "no_strikes"
 
-            return sorted(opportunities, key=lambda x: x["score"], reverse=True), "ok"
+            return sorted(result_opps, key=lambda x: x["score"], reverse=True), "ok"
 
         except Exception:
             return [], "scan_error"

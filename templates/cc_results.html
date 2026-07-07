@@ -12,6 +12,7 @@
 <header class="site-header">
     <a href="{{ url_for('dashboard') }}" class="brand">Trade Advisor</a>
     <nav>
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
         <a href="{{ url_for('top_csp') }}" class="nav-link">Top CSP</a>
         <a href="{{ url_for('top_cc') }}"  class="nav-link">Top CC</a>
         {% if session.get('guest') %}
@@ -80,6 +81,9 @@
     <p class="empty-state">{{ symbol }} — {{ scan_message }}</p>
     {% endif %}
 
+    {% if delta_note %}
+    <p class="freshness-note">No contracts found in the 0.25–0.30 delta range — showing nearest available (0.20–0.35 delta).</p>
+    {% endif %}
     <p class="freshness-note">Data via Yahoo Finance · ~15 min delayed · verify with your broker before trading</p>
 
 </div>
