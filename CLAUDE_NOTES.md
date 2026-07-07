@@ -43,23 +43,23 @@ Changed subtitle from "Sign in to manage your tickers" to "Options scanner for c
 
 ---
 
-## Current State After This Session
+## Current State After This Session (end of day 2026-07-06)
 
 - **PostgreSQL:** Live and connected on Render ✓
 - **3 digest subscribers:** tradeadvisor2025@gmail.com, sramaswami2021@gmail.com, sramaswami2025@gmail.com ✓
+- **Digest verified:** All 3 inboxes received the email ✓
 - **8 watchlist symbols:** AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA ✓
-- **Scan cache:** Warming up (background scanner running) — Send Digest once CSP/CC show data
-- **IV readings:** Will accumulate from scratch on new PostgreSQL — need 5+ per symbol for IV Rank
+- **IV readings:** NVDA/SPY/AAPL/MSFT/TSLA all at 5+ ✓ · GOOGL/AMZN/META at 4 (one more cycle needed)
+- **Scan cache:** 9 CSP opps, 9 CC opps ✓
+- **Admin dashboard:** PostgreSQL badge, clean card layout, no clipping ✓
+- **App:** Ready to share with friends — best to share Monday after market open
 
 ---
 
-## Pending for Next Session
+## Pending for Next Session (Monday 2026-07-07)
 
-### Verify digest sends to 3 users
-After scan cache warms (~10–15 min), hit **Send Digest** from `/admin`. Confirm Render logs show `"Digest sent to 3 user(s)"` and email arrives at all three addresses.
-
-### Verify IV readings reach 5+ per symbol
-Check `/admin/iv-status` after a few hours. Need 5+ readings per symbol for IV Rank to display on CSP/CC pages. Scanner records 2 readings per symbol per hourly cycle (CSP + CC).
+### Share with friends
+App is ready. Share link after market open (~9:45 AM ET) once scan cache refreshes with live Monday data. Per-symbol scans return "no expirations" on weekends — Top CSP/CC pages use cache so those work anytime.
 
 ### P4 — IV Rank scoring integration (~2026-07-18)
 Once `iv_history` has 2 weeks of data, add `+1` if IV Rank ≥ 50, `+2` if IV Rank ≥ 70 to `_score_csp` / `_score_cc` in `options_engine.py`.
