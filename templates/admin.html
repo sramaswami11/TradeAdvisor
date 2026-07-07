@@ -69,7 +69,7 @@
             <h3>IV Rank Accumulation <span class="admin-note">(need {{ iv_min_samples }}+ per symbol)</span></h3>
             {% if iv_rows %}
             <table class="admin-table">
-                <thead><tr><th>Symbol</th><th>Readings</th><th>Last (m ago)</th></tr></thead>
+                <thead><tr><th>Symbol</th><th>Readings</th></tr></thead>
                 <tbody>
                 {% for r in iv_rows %}
                 <tr>
@@ -81,7 +81,6 @@
                             {{ r.readings }}/{{ iv_min_samples }}
                         {% endif %}
                     </td>
-                    <td>{{ r.last_ago_m }}</td>
                 </tr>
                 {% endfor %}
                 </tbody>
