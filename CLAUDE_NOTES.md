@@ -2,6 +2,90 @@
 
 ---
 
+## Session: 2026-07-07
+
+### 1. Digest Card — Full Width on Admin Dashboard (commit `ea9bffa`)
+
+Added `grid-column: 1 / -1` to the Digest card so it spans the full row width.
+Previously the Digest and CC Debug cards were side-by-side (~300px each), clipping subscriber emails.
+
+**After:** Scan Caches | IV Rank · Digest (full width) · CC Debug (own row)
+
+---
+
+### 2. Dashboard Nav Link on Per-Symbol CSP/CC Pages (commit `2b1c6af`)
+
+Added explicit **Dashboard** link to nav bar on `csp_results.html` and `cc_results.html`.
+Top CSP and Top CC already had it — only the per-symbol pages were missing it.
+
+---
+
+### 3. Delta Fallback for CSP/CC Scans (commits `2b1c6af`, `73ccfbb`)
+
+**Problem:** When no contracts were found in the 0.25–0.30 delta range (e.g. SPY with low VIX),
+the scan returned "No contracts found" instead of showing the nearest available options.
+
+**Fix (two iterations):**
+- First pass: added 0.20–0.35 secondary range — still missed SPY in some conditions
+- Final fix: made fallback a true catch-all — if primary range (0.25–0.30) is empty,
+  show ANY contract that passed the OTM window + liquidity filters, regardless of delta.
+  A note appears: "No contracts found in 0.25–0.30 delta range — showing nearest available. Check the Delta column."
+
+**Also fixed:** `no_strikes` scan message no longer hardcodes "0.25–0.30" — now says options data
+may be unavailable or illiquid (since that's the only remaining case where nothing shows).
+
+**Files:** `options_engine.py`, `app.py`, `csp_results.html`, `cc_results.html`
+
+---
+
+### 4. sellToFriends.md Created (gitignored)
+
+Created `sellToFriends.md` with competitive landscape, feature talking points, pitch language,
+objection handling, and honest caveats for sharing with friends.
+Added to `.gitignore` along with `response.md` (commit `c74a782`).
+
+---
+
+### 5. App Declared Ready to Share with Friends
+
+All core features working. Discussed URL alias options:
+- **Option A (free):** Rename Render service to `tradeadvisor` → `tradeadvisor.onrender.com`
+- **Option B (~$10/yr):** Custom domain (e.g. `tradeadvisor.app`) via Namecheap + Render custom domains
+- **Option C (instant):** bit.ly short link
+
+---
+
+## Current State After This Session (end of 2026-07-07)
+
+- **App:** Ready to share with friends ✓
+- **Render URL:** https://tradeadvisor-hpfq.onrender.com
+- **PostgreSQL:** Live ✓ · **3 digest subscribers** ✓ · **8 watchlist symbols** ✓
+- **IV readings:** All 8 symbols at 5+ readings, IV Rank displaying ✓
+- **Admin dashboard:** Full-width Digest card, CC Debug on its own row ✓
+- **Delta fallback:** CSP/CC now always return results if options data exists ✓
+- **Nav:** Dashboard link on all pages ✓
+
+---
+
+## Pending for Next Session
+
+### URL alias (optional, before wider sharing)
+Rename Render service to `tradeadvisor` for cleaner URL, or buy a custom domain.
+
+### P4 — IV Rank scoring integration (~2026-07-18)
+Once `iv_history` has 2 weeks of data, add `+1` if IV Rank ≥ 50, `+2` if IV Rank ≥ 70
+to `_score_csp` / `_score_cc` in `options_engine.py`. Currently display-only.
+
+---
+
+## Commits This Session (2026-07-07)
+- `ea9bffa` — Expand Digest card to full width so subscriber emails aren't clipped
+- `2b1c6af` — Add Dashboard nav link to CSP/CC pages; widen delta range as fallback
+- `73ccfbb` — Make delta fallback a true catch-all — show any OTM contract if target range is empty
+- `c74a782` — Add sellToFriends.md and response.md to .gitignore
+
+---
+
 ## Session: 2026-07-06
 
 ### 1. PostgreSQL Was Never Connected — Root Cause of All Data Loss
