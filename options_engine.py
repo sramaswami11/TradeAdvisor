@@ -137,6 +137,8 @@ class OptionsEngine:
             fallback_opps = []
             atm_iv = None
             atm_iv_distance = float("inf")
+            iv_rank_data = get_iv_rank(symbol)
+            iv_rank = iv_rank_data["iv_rank"] if iv_rank_data else None
 
             # -----------------------------------
             # Filter to valid DTE window, widening if needed
@@ -259,9 +261,9 @@ class OptionsEngine:
                             in_primary = delta is None or (0.25 <= delta <= 0.30)
 
                         score = (
-                            self._score_csp(signals, yield_pct, annualized, distance_pct)
+                            self._score_csp(signals, yield_pct, annualized, distance_pct, iv_rank)
                             if side == "csp"
-                            else self._score_cc(signals, yield_pct, annualized, distance_pct)
+                            else self._score_cc(signals, yield_pct, annualized, distance_pct, iv_rank)
                         )
 
                         opp = {
@@ -293,9 +295,6 @@ class OptionsEngine:
 
             if atm_iv:
                 record_iv(symbol, atm_iv)
-
-            iv_rank_data = get_iv_rank(symbol)
-            iv_rank = iv_rank_data["iv_rank"] if iv_rank_data else None
 
             result_opps = opportunities if opportunities else fallback_opps
             for opp in result_opps:
@@ -485,7 +484,7 @@ class OptionsEngine:
     # -----------------------------------
     # Scoring
     # -----------------------------------
-    def _score_csp(self, signals, yield_pct, annualized, distance_pct):
+    def _score_csp(self, signals, yield_pct, annualized, distance_pct, iv_rank=None):
 
         score = 0
 
@@ -516,9 +515,15 @@ class OptionsEngine:
         if distance_pct < -0.15:
             score += 1
 
+        if iv_rank is not None and iv_rank >= 50:
+            score += 1
+
+        if iv_rank is not None and iv_rank >= 70:
+            score += 1
+
         return score
 
-    def _score_cc(self, signals, yield_pct, annualized, distance_pct):
+    def _score_cc(self, signals, yield_pct, annualized, distance_pct, iv_rank=None):
 
         score = 0
 
@@ -549,6 +554,12 @@ class OptionsEngine:
             score += 1
 
         if distance_pct > 0.08:
+            score += 1
+
+        if iv_rank is not None and iv_rank >= 50:
+            score += 1
+
+        if iv_rank is not None and iv_rank >= 70:
             score += 1
 
         return score

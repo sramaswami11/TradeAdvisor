@@ -193,6 +193,30 @@ def test_score_csp_partial():
     score = engine._score_csp(signals, yield_pct=0.006, annualized=0.15, distance_pct=-0.05)
     assert score == 5
 
+def test_score_csp_iv_rank_adds_one_at_50():
+    engine = OptionsEngine()
+    base = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03)
+    scored = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03, iv_rank=50)
+    assert scored == base + 1
+
+def test_score_csp_iv_rank_adds_two_at_70():
+    engine = OptionsEngine()
+    base = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03)
+    scored = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03, iv_rank=70)
+    assert scored == base + 2
+
+def test_score_cc_iv_rank_adds_one_at_50():
+    engine = OptionsEngine()
+    base = engine._score_cc({}, yield_pct=0.001, annualized=0.05, distance_pct=0.03)
+    scored = engine._score_cc({}, yield_pct=0.001, annualized=0.05, distance_pct=0.03, iv_rank=50)
+    assert scored == base + 1
+
+def test_score_cc_iv_rank_adds_two_at_70():
+    engine = OptionsEngine()
+    base = engine._score_cc({}, yield_pct=0.001, annualized=0.05, distance_pct=0.03)
+    scored = engine._score_cc({}, yield_pct=0.001, annualized=0.05, distance_pct=0.03, iv_rank=70)
+    assert scored == base + 2
+
 
 # -------------------------
 # _label
