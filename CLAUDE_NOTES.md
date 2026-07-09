@@ -2,6 +2,57 @@
 
 ---
 
+## Session: 2026-07-09
+
+### 1. Render URL Suffix — Explained (no code change)
+
+User noticed the Render URL has `-hpfq` appended despite the service being named "TradeAdvisor". Explained that Render's **service display name** and **URL slug** are separate — the slug is assigned at service creation time and cannot be changed on an existing service.
+
+Options to get a cleaner URL:
+- **Custom domain** (~$10/yr via Namecheap + Render custom domains) — cleanest path
+- **Delete and recreate the service** — choose slug `tradeadvisor` on creation, but requires re-adding all env vars and reconnecting PostgreSQL
+- **Bit.ly short link** — instant, free
+
+Decision: leave as-is for now.
+
+---
+
+### 2. Admin Grid Card Overflow — FIXED (commit `fe83dfe`)
+
+**Problem:** On wide screens, `repeat(auto-fill, minmax(300px, 1fr))` was creating 3+ columns, making the Scan Caches card too narrow. The CSP/CC opp counts and ages (`12 opps`, `77m old`, etc.) were overflowing outside the card's right border and appearing to float between the two cards.
+
+**Fix:** Changed `.admin-grid` in `static/style.css` to `repeat(2, 1fr)` — exactly 2 equal columns always. Digest card already spans `1 / -1` so it remains full width.
+
+**File:** `static/style.css` line 385
+
+---
+
+## Current State After This Session (end of 2026-07-09)
+
+- **App:** Live and share-ready ✓
+- **Render URL:** https://tradeadvisor-hpfq.onrender.com (slug unchanged by design)
+- **PostgreSQL:** Live ✓ · **3 digest subscribers** ✓ · **8 watchlist symbols** ✓
+- **IV readings:** All 8 symbols at 70–93 readings (~2 weeks of data accumulated) ✓
+- **Admin dashboard:** Card overflow fixed, clean 2-column layout ✓
+
+---
+
+## Pending for Next Session
+
+### P4 — IV Rank scoring integration (ready now)
+`iv_history` has 70–93 readings per symbol (~2 weeks). Ready to wire in:
+- `+1` if IV Rank ≥ 50, `+2` if IV Rank ≥ 70 in `_score_csp` / `_score_cc` in `options_engine.py`
+
+### URL alias (optional)
+Custom domain or leave as-is.
+
+---
+
+## Commits This Session (2026-07-09)
+- `fe83dfe` — Fix admin grid card overflow — lock to 2 columns instead of auto-fill
+
+---
+
 ## Session: 2026-07-07
 
 ### 1. Digest Card — Full Width on Admin Dashboard (commit `ea9bffa`)
