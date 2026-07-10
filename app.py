@@ -498,6 +498,55 @@ def admin_cc_debug():
         return f"Error scanning {symbol}: {e}", 500
 
 
+@app.route("/admin/chain-raw")
+def admin_chain_raw():
+    """Dump raw option chain (no filters) for the nearest expiration — diagnoses zero-price / rate-limit issues."""
+    if "user_id" not in session:
+        return redirect(url_for("login"))
+    user = get_user_by_id(session["user_id"])
+    if not is_admin(user):
+        abort(403)
+
+    symbol = request.args.get("symbol", "AAPL").upper()
+    side = request.args.get("side", "calls")  # 'calls' or 'puts'
+    lines = [f"Symbol: {symbol}  side: {side}", ""]
+    try:
+        from market_data.provider import _yf_semaphore
+        import time as _time
+        _yf_semaphore.acquire()
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="5d", auto_adjust=True)
+            price = float(hist["Close"].iloc[-1]) if hist is not None and not hist.empty else None
+            lines.append(f"Price: {price}")
+            expirations = ticker.options
+            lines.append(f"Expirations found: {len(expirations) if expirations else 0}")
+            if expirations:
+                lines.append(f"Next 3: {list(expirations)[:3]}")
+                expiry = expirations[0]
+                chain = ticker.option_chain(expiry)
+                contracts = chain.calls if side == "calls" else chain.puts
+                lines.append(f"\nExpiry: {expiry}  Contracts in chain: {len(contracts) if contracts is not None else 0}")
+                if contracts is not None and not contracts.empty:
+                    lines.append(f"Columns: {list(contracts.columns)}")
+                    lines.append("")
+                    for _, row in contracts.head(10).iterrows():
+                        strike = row.get("strike", "?")
+                        bid = row.get("bid", "?")
+                        ask = row.get("ask", "?")
+                        last = row.get("lastPrice", "?")
+                        oi = row.get("openInterest", "?")
+                        iv = row.get("impliedVolatility", "?")
+                        lines.append(f"  strike={strike}  bid={bid}  ask={ask}  last={last}  oi={oi}  iv={iv}")
+                else:
+                    lines.append("  (chain empty or None)")
+        finally:
+            _yf_semaphore.release()
+    except Exception as e:
+        lines.append(f"Error: {e}")
+    return "\n".join(lines), 200, {"Content-Type": "text/plain"}
+
+
 @app.route("/admin/test-email")
 def admin_test_email():
     """Send a sample digest email to the logged-in admin to verify Mailjet delivery."""
