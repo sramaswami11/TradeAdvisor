@@ -2,6 +2,114 @@
 
 ---
 
+## Session: 2026-07-11
+
+### 1. Yahoo Finance Rate Limiting Diagnosed
+
+Per-symbol scans (`/csp/NVDA`, `/csp/TSLA`, etc.) were returning the misleading message "No qualifying contracts found within the scan window." Root cause diagnosed via the new `/admin/chain-raw` route.
+
+**What was happening:**
+- `_get_expirations` succeeded (expiration cache hit — no live call needed)
+- Every subsequent `ticker.option_chain(expiry)` was rate limited by Yahoo Finance, returning `None`
+- All expirations skipped → `opportunities` and `fallback_opps` both empty → fell through to `"no_strikes"`
+- `chain-raw` confirmed: `ticker.options` returned `"Too Many Requests. Rate limited. Try after a while."` — NVDA price fetch (5d history) succeeded at $210.96
+
+**Rate limiting is Render IP-specific.** Per-symbol on-demand scans hit Yahoo Finance immediately; background scanner spaces calls over the hour and is less affected.
+
+---
+
+### 2. Rate-Limit Detection Added (commits `e7269bc`, `d243cf2`)
+
+**commit `e7269bc` — `/admin/chain-raw` route**
+New diagnostic endpoint: fetches raw option chain (bypasses all filters) for the nearest expiration. Shows price, expirations list, columns, and raw bid/ask/lastPrice per contract. Use when seeing `no_strikes` to determine if it's a data or rate-limit issue.
+URL: `/admin/chain-raw?symbol=NVDA&side=calls`
+
+**commit `d243cf2` — `rate_limited` reason code**
+`_find_opportunities` now tracks `chains_fetched`. If expirations exist but every chain fetch returns `None` (rate limited), returns `"rate_limited"` instead of `"no_strikes"`.
+User now sees: *"Yahoo Finance is rate-limiting options data from this server — try again in a few minutes, or check Top CSP / Top CC for cached results."*
+`"no_strikes"` is now reserved for the genuine case: chain fetched successfully but all contracts filtered out.
+
+---
+
+## Current State (end of 2026-07-11)
+
+- **App:** Live ✓
+- **PostgreSQL:** Live ✓ · 3 digest subscribers ✓ · 8 watchlist symbols ✓
+- **IV readings:** All 8 symbols at 70–93+ readings ✓ · IV Rank scoring active ✓
+- **Tests:** 72 passing ✓
+- **Per-symbol scans:** Rate limited by Yahoo Finance on Render IP — shows correct error message now
+- **Top CSP / Top CC:** Background scanner caches results hourly — should still have data
+
+---
+
+## Pending for Next Session (first thing 2026-07-12)
+
+### 1. Verify rate limit has cleared
+Hit `/csp/NVDA` and `/cc/NVDA`. Should return results (not the rate-limited message). If still blocked, check Render logs for `"Too Many Requests"` during the last background scan cycle.
+
+### 2. Verify IV Rank scoring in production
+Once per-symbol scans work again:
+- Check `/csp/TSLA` or `/csp/NVDA` — IV Rank column should show a number
+- Score should reflect +1/+2 bonus for IV Rank ≥ 50/70
+- Check `/top-csp` and `/top-cc` — high-IV symbols should rank higher
+
+### 3. Check `/admin/iv-status`
+Confirm all 8 symbols still at 70–93+ readings after deploy.
+
+### 4. URL alias (optional)
+Custom domain or leave as-is.
+
+---
+
+## Commits This Session (2026-07-11)
+- `e7269bc` — Add /admin/chain-raw — dump raw option chain before filters for rate-limit diagnosis
+- `d243cf2` — Detect rate limiting — return rate_limited reason instead of no_strikes when all chain fetches fail
+
+---
+
+## Session: 2026-07-10
+
+### 1. IV Rank Scoring Integration — DONE (commit `2a82f5c`)
+
+`iv_history` had 70–93 readings per symbol (~2 weeks of data), making IV Rank meaningful enough to affect scoring.
+
+**Changes to `options_engine.py`:**
+- `get_iv_rank(symbol)` moved to before the contract loop so `iv_rank` is available during per-contract scoring
+- Removed the duplicate `get_iv_rank` call that was previously after the loop
+- `_score_csp` and `_score_cc` both gain an `iv_rank=None` parameter:
+  - `+1` if IV Rank ≥ 50
+  - `+1` more if IV Rank ≥ 70 (total +2 at ≥70)
+- Scoring call updated to pass `iv_rank`
+
+**Tests:** 4 new tests added (`test_score_csp_iv_rank_adds_one_at_50`, `test_score_csp_iv_rank_adds_two_at_70`, `test_score_cc_iv_rank_adds_one_at_50`, `test_score_cc_iv_rank_adds_two_at_70`). **72 total, all passing.**
+
+**Note:** `iv_rank` used for scoring is fetched before the new reading is recorded for the session — it reflects prior accumulated data, not the current scan's reading. Difference is negligible (one reading).
+
+---
+
+## Current State After This Session (end of 2026-07-10)
+
+- **App:** Live and share-ready ✓
+- **Render URL:** https://tradeadvisor-hpfq.onrender.com (slug unchanged by design)
+- **PostgreSQL:** Live ✓ · **3 digest subscribers** ✓ · **8 watchlist symbols** ✓
+- **IV readings:** All 8 symbols at 70–93 readings (~2 weeks of data accumulated) ✓
+- **IV Rank scoring:** Active — high IV environments now rank CSP/CC opportunities higher ✓
+- **Tests:** 72 passing ✓
+
+---
+
+## Pending for Next Session
+
+### URL alias (optional)
+Custom domain or leave as-is.
+
+---
+
+## Commits This Session (2026-07-10)
+- `2a82f5c` — Wire IV Rank into CSP/CC scoring — +1 at rank ≥50, +2 at rank ≥70
+
+---
+
 ## Session: 2026-07-09
 
 ### 1. Render URL Suffix — Explained (no code change)
