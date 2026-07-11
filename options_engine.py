@@ -135,6 +135,7 @@ class OptionsEngine:
             earnings_date = self._get_next_earnings(ticker)
             opportunities = []
             fallback_opps = []
+            chains_fetched = 0
             atm_iv = None
             atm_iv_distance = float("inf")
             iv_rank_data = get_iv_rank(symbol)
@@ -176,6 +177,7 @@ class OptionsEngine:
                 if chain is None:
                     continue
 
+                chains_fetched += 1
                 contracts = chain.puts if side == "csp" else chain.calls
 
                 if contracts is None or contracts.empty:
@@ -301,6 +303,8 @@ class OptionsEngine:
                 opp["iv_rank"] = iv_rank
 
             if not result_opps:
+                if chains_fetched == 0:
+                    return [], "rate_limited"
                 return [], "no_strikes"
 
             return sorted(result_opps, key=lambda x: x["score"], reverse=True), "ok"

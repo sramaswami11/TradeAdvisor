@@ -46,6 +46,7 @@ _SCAN_REASON_MESSAGES = {
     "below_dma":     "Stock is in a downtrend (below both 50-day and 200-day moving averages) — not ideal for selling premium.",
     "no_expirations": "No option expirations found within the scan window (up to 45 days).",
     "no_strikes":    "No qualifying contracts found within the scan window — options data may be unavailable or the chain is illiquid right now.",
+    "rate_limited":  "Yahoo Finance is rate-limiting options data from this server — try again in a few minutes, or check Top CSP / Top CC for cached results.",
     "scan_error":    "Scan error — Yahoo Finance may be rate-limiting. Try again in a few minutes.",
 }
 
