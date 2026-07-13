@@ -22,6 +22,15 @@ from market_data.provider import calculate_rsi, calculate_realized_vol, _yf_sema
 from database import get_cache, set_cache, record_iv, get_iv_rank
 
 
+def _make_options_provider():
+    """Return a TradierOptionsProvider when TRADIER_API_KEY is set, else None (yfinance path)."""
+    key = os.environ.get("TRADIER_API_KEY")
+    if key:
+        from market_data.tradier import TradierOptionsProvider
+        return TradierOptionsProvider(key)
+    return None
+
+
 # ------------------------------------
 # Render-safe: use /tmp for cache file
 # ------------------------------------
@@ -43,6 +52,7 @@ class OptionsEngine:
 
     def __init__(self):
         self._option_chain_cache = {}
+        self._provider = _make_options_provider()
 
     # -----------------------------------
     # Public API
@@ -126,8 +136,9 @@ class OptionsEngine:
             # -----------------------------------
             # Fetch expirations
             # -----------------------------------
-            time.sleep(2)  # space out burst calls after history fetch
-            expirations = self._get_expirations(ticker, symbol)
+            if self._provider is None:
+                time.sleep(2)  # yfinance: space out burst calls after history fetch
+            expirations = self._get_expirations(symbol)
 
             if not expirations:
                 return [], "no_expirations"
@@ -169,10 +180,10 @@ class OptionsEngine:
                     and abs((expiry_date_obj - earnings_date).days) <= 5
                 )
 
-                if i > 0:
-                    time.sleep(1)
+                if i > 0 and self._provider is None:
+                    time.sleep(1)  # yfinance: throttle between chain fetches
 
-                chain = self._get_cached_option_chain(ticker, symbol, expiry)
+                chain = self._get_cached_option_chain(symbol, expiry)
 
                 if chain is None:
                     continue
@@ -339,49 +350,43 @@ class OptionsEngine:
     # -----------------------------------
     # Expiration Fetcher
     # -----------------------------------
-    def _get_expirations(self, ticker, symbol):
+    def _get_expirations(self, symbol):
 
         cache = self._load_expiration_cache()
         symbol = symbol.upper()
 
         if symbol in cache:
-
             entry = cache[symbol]
             age = time.time() - entry["timestamp"]
-
             if age < self.EXPIRATION_CACHE_SECONDS:
                 return entry["expirations"]
 
-        expirations = None
-
-        for attempt in range(3):
-
-            try:
-
-                expirations = ticker.options
-
-                if expirations:
-                    break
-
-            except Exception as ex:
-
-                msg = str(ex).lower()
-                if "429" in msg or "too many" in msg:
-                    if symbol in cache:
-                        return cache[symbol]["expirations"]
-                    return []
-                else:
-                    time.sleep(3 * (2 ** attempt))
+        if self._provider is not None:
+            expirations = self._provider.get_expirations(symbol)
+        else:
+            expirations = []
+            ticker = yf.Ticker(symbol)
+            for attempt in range(3):
+                try:
+                    result = ticker.options
+                    if result:
+                        expirations = list(result)
+                        break
+                except Exception as ex:
+                    msg = str(ex).lower()
+                    if "429" in msg or "too many" in msg:
+                        if symbol in cache:
+                            return cache[symbol]["expirations"]
+                        return []
+                    else:
+                        time.sleep(3 * (2 ** attempt))
 
         if expirations:
-
             cache[symbol] = {
                 "timestamp": time.time(),
-                "expirations": list(expirations)
+                "expirations": expirations
             }
-
             self._save_expiration_cache(cache)
-
             return expirations
 
         if symbol in cache:
@@ -431,27 +436,26 @@ class OptionsEngine:
     # -----------------------------------
     # Cached option chain fetch
     # -----------------------------------
-    def _get_cached_option_chain(self, ticker, symbol, expiry):
+    def _get_cached_option_chain(self, symbol, expiry):
 
         key = f"{symbol}_{expiry}"
         cached = self._option_chain_cache.get(key)
 
         if cached:
-
             cache_time, chain = cached
             age = time.time() - cache_time
-
             if age < self.OPTION_CHAIN_CACHE_SECONDS:
                 return chain
 
         try:
+            if self._provider is not None:
+                chain = self._provider.get_chain(symbol, expiry)
+            else:
+                chain = yf.Ticker(symbol).option_chain(expiry)
 
-            chain = ticker.option_chain(expiry)
-
-            self._option_chain_cache[key] = (time.time(), chain)
-
+            if chain is not None:
+                self._option_chain_cache[key] = (time.time(), chain)
             return chain
-
         except Exception:
             return None
 
