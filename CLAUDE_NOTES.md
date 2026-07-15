@@ -2,6 +2,273 @@
 
 ---
 
+## Session: 2026-07-15
+
+### 1. Vision Assessment — Full Ticker Report
+
+Assessed the app against a vision of a unified per-ticker report (price, trend, business, earnings, options, recommendation). Gap analysis:
+
+| Section | Status before today |
+|---|---|
+| Current Price | Done |
+| Trend: DMA positioning | Done |
+| Trend: RSI | Done |
+| Options: CSP strike, yield | Done |
+| Recommendation: confidence % | Done |
+| Trend: volatility direction | Partial — computed but not stored or shown |
+| Options: P(Assignment) | Partial — delta existed, just needed relabeling |
+| Wheel Candidate verdict | Partial — action + score existed but never joined |
+| The report page itself | Missing — data scattered across dashboard, CSP page, admin |
+| Business: revenue segments | Missing — needs premium data source |
+| Latest Earnings: beat/miss | Missing — yfinance has it, just not wired up |
+| Risks: qualitative bullets | Missing — needs LLM + news source |
+
+---
+
+### 2. `/report/<symbol>` Page — BUILT (commit `bc776c1`)
+
+New unified report page at `/report/<symbol>` with four cards:
+
+**Trend card:** vs 200 DMA and 50 DMA (with dollar values), RSI with label, 30-day realized vol with Low/Moderate/High label and declining/stable/rising direction, 52-week range.
+
+**Latest Earnings card** (new data via `fetch_fundamentals()`): EPS actual vs estimate, EPS surprise %, revenue growth YoY, gross margin, operating margin.
+
+**Options — Top CSP card:** Strike, expiry, DTE, bid, annualized yield, distance, P(Assignment) = `|delta| × 100`, IV Rank, score badge. Links to full CSP and CC scan pages.
+
+**Recommendation card:** BUY/HOLD/SELL signal, confidence %, Wheel Candidate verdict (green/red badge), reason bullets from StrategyEngine.
+
+**Dashboard change:** "Report" column added between View and CSP. Loading spinner extended to report links.
+
+---
+
+### 3. `fetch_fundamentals()` Added to `market_data/provider.py`
+
+Fetches from yfinance `.info` and `.earnings_dates`: sector, industry, gross/operating margins, revenue growth, earnings growth, trailing/forward EPS, and most recent quarter EPS estimate/actual/surprise. Cached in DB at `fundamentals:{symbol}` with 4-hour TTL.
+
+**lxml dependency:** `ticker.earnings_dates` uses `pandas.read_html()` internally which requires `lxml`. Was missing → EPS silently returned None for all three fields. Added `lxml` to `requirements.txt`. Verified: AAPL shows $2.01 actual / $1.94 estimate / +3.46% surprise.
+
+---
+
+### 4. Realized Vol + Vol Direction Added to Snapshot
+
+`fetch_snapshot` now stores `realized_vol` (30-day annualized) and `vol_direction` ("declining"/"stable"/"rising" — comparing last 30 days vs prior 30 days with 10% threshold) in the snapshot cache. Were computed before but discarded.
+
+---
+
+### 5. CSCO Report — Sample Output (matches original vision ticker)
+
+- Price $111.77 · Above 200 DMA ($86.13) · Below 50 DMA ($114.90) · RSI 40 Neutral · Vol 43.4% High stable
+- EPS: $1.06 actual / $1.04 estimate → +2.29% beat · Revenue +12.0% YoY · Gross margin 64.3% · Operating margin 25.0%
+- Top CSP: Strike $108 · 8 DTE · $1.18 bid · **52.38% annualized** · P(Assignment) 26% · IV Rank **100** · Score **10 STRONG**
+- Verdict: HOLD / 25% confidence / Not a Wheel Candidate
+
+**Open issue:** Wheel Candidate verdict is too conservative. CSCO has IV Rank 100 + STRONG 10-point CSP + solid earnings but scores "Not a Wheel Candidate" because StrategyEngine confidence is 25% (penalized for being below 50 DMA). Verdict should factor in CSP score + above-200-DMA status. Deferred.
+
+---
+
+## Current State (end of 2026-07-15)
+
+- **App:** Live on Render ✓ · deployed commit `bc776c1`
+- **Report page:** `/report/<symbol>` live — price, trend, earnings, options, wheel verdict ✓
+- **lxml:** added to requirements.txt — installs on Render on next deploy ✓
+- **PostgreSQL / IV / digest:** unchanged and working ✓
+
+---
+
+## Pending for Next Session (2026-07-16)
+
+### 1. Verify Render deploy
+Check `/report/CSCO` on live Render. Confirm EPS fields populate (lxml now in requirements.txt). Confirm all four cards render correctly.
+
+### 2. Improve Wheel Candidate verdict logic
+Current: `bool(csp_opps) and confidence >= 50`. Too conservative — rejects CSCO (IV Rank 100, STRONG 10 score) because StrategyEngine confidence is 25%.
+Proposed: `is_wheel_candidate = bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))`. Above 200 DMA + STRONG CSP score should be sufficient.
+
+### 3. Remaining vision gaps (medium-term)
+- **Business segment breakdown** — yfinance doesn't have it. SEC EDGAR XBRL API is a free option.
+- **Risks: qualitative bullets** — needs Claude API call summarizing recent news/SEC language. The "AI-powered" differentiator piece.
+
+---
+
+## Commits This Session (2026-07-15)
+- `bc776c1` — Add /report/<symbol> — unified ticker analysis report page
+
+---
+
+## Session: 2026-07-13
+
+### 1. Tradier Rate Limits Verified (from docs)
+
+Before building, confirmed production limits from the live Tradier docs:
+- Market data (`/markets/*`): **120 req/min** per API key, rolling window
+- No daily limits
+- Response headers: `X-Ratelimit-Used`, `X-Ratelimit-Available`, `X-Ratelimit-Expiry`
+- `get_chain` is **per expiration** (one call per expiry, not per symbol) — `get_expirations` returns all dates in one call
+
+**Usage math:** 8 symbols × (1 expiry call cached + 2 chain calls) = ~24 calls/hourly scan = 0.3% of budget. Not a concern.
+
+---
+
+### 2. Tradier Integration — BUILT (commit `1631f29`)
+
+**`market_data/tradier.py`** (new file)
+- `TradierOptionsProvider` with `get_expirations(symbol)` and `get_chain(symbol, expiry)`
+- `get_chain` requests `greeks=true` and maps Tradier field names to yfinance column names (`lastPrice` ← `last`, `openInterest` ← `open_interest`, `impliedVolatility` ← `greeks.mid_iv`)
+- Returns `SimpleNamespace` with `.puts` / `.calls` DataFrames — same shape as yfinance so `OptionsEngine` needs no changes in the contract loop
+
+**`options_engine.py`** changes:
+- `_make_options_provider()` — reads `TRADIER_API_KEY` env var at init; returns provider or `None`
+- `OptionsEngine.__init__` — stores `self._provider`
+- `_get_expirations(symbol)` — removed `ticker` param; dispatches to provider or yfinance
+- `_get_cached_option_chain(symbol, expiry)` — same pattern
+- `time.sleep(2)` / `time.sleep(1)` throttles are skipped when provider is set (they were yfinance-only workarounds)
+- yfinance stays for `ticker.history()` (price/indicators) and `ticker.calendar` (earnings)
+
+**72/72 tests pass unchanged** — no `TRADIER_API_KEY` in test env → `self._provider = None` → yfinance/mock path runs as before.
+
+---
+
+### 3. Tradier Sandbox vs Production — Decision Pending
+
+Discovered during account signup that the **production API key requires a full brokerage account** (SSN, DOB, etc.) — it's a FINRA-regulated broker-dealer, same as Schwab. That's more commitment than expected.
+
+**Two options being considered:**
+- **Tradier sandbox** — sign up at `https://web.tradier.com/user/api` with just email/password; get sandbox token on that page; 60 req/min, delayed/simulated data. Base URL: `https://sandbox.tradier.com/v1` (different from production `https://api.tradier.com/v1`). Our current code hardcodes production URL — needs a `sandbox` flag or `TRADIER_SANDBOX=true` env var before using sandbox key.
+- **Polygon.io free tier** — email-only signup, no brokerage account needed, 15-min delayed options data (same delay as yfinance anyway), already in roadmap.md as the `~$30/mo` option but free tier exists.
+
+**Code change needed before using sandbox key:** `market_data/tradier.py` currently hardcodes `_BASE = "https://api.tradier.com/v1"`. Need to add sandbox support (either a constructor param or read `TRADIER_SANDBOX` env var) before setting the key on Render.
+
+**Left unresolved — decision deferred to 2026-07-14.**
+
+---
+
+## Current State (end of 2026-07-13)
+
+- **App:** Live ✓
+- **PostgreSQL:** Live ✓ · 3 digest subscribers ✓ · 8 watchlist symbols ✓
+- **IV readings:** All 8 symbols at 70–93+ readings ✓ · IV Rank scoring active ✓
+- **Tests:** 72 passing ✓
+- **Tradier integration:** Code complete and committed — NOT yet activated (no `TRADIER_API_KEY` set on Render)
+- **Per-symbol scans:** Still on yfinance / may still be rate-limited — unverified today
+
+---
+
+## Pending for Next Session (first thing 2026-07-14)
+
+### 1. Decide: Tradier sandbox or Polygon.io free tier?
+- **Tradier sandbox:** Get key at `https://web.tradier.com/user/api` (email only). Then add `TRADIER_SANDBOX` env var support to `market_data/tradier.py` before setting key on Render.
+- **Polygon.io:** Different provider implementation needed — same pluggable interface, different API.
+
+### 2. Fix sandbox URL before activating (if going Tradier sandbox)
+`market_data/tradier.py` needs to switch base URL to `https://sandbox.tradier.com/v1` when sandbox key is in use. Add `TRADIER_SANDBOX=true` env var support (read in `_make_options_provider`, pass `sandbox=True` to constructor).
+
+### 3. Set key on Render and verify
+Once URL is correct: set `TRADIER_API_KEY` (and `TRADIER_SANDBOX=true` if sandbox) in Render environment, redeploy, hit `/csp/NVDA` and confirm results come back.
+
+### 4. Carry-over verifications (from earlier sessions)
+- `/csp/NVDA` and `/cc/NVDA` — confirm rate limit has cleared (or confirm Tradier is working)
+- `/admin/iv-status` — confirm all 8 symbols still at 70–93+ readings
+
+---
+
+## Commits This Session (2026-07-13)
+- `1631f29` — Add Tradier options provider — replaces yfinance for options fetches on Render
+
+---
+
+## Session: 2026-07-12
+
+### 1. Admin Dashboard — IV Rank Accumulation Card Clarified
+
+Two questions answered about the IV Rank Accumulation card on `/admin`:
+
+**What "readings" means:** Each reading is one `record_iv()` call — one volatility data point written to `iv_history`. Two sources produce them:
+- Background scanner (hourly) — `options_engine.py` calls `record_iv(symbol, realized_vol)` once per symbol per scan cycle
+- Dashboard snapshot (every 15 min) — `provider.py` calls `record_iv(symbol, realized_vol)` on each `fetch_snapshot` triggered by a dashboard load
+
+**What the ✓ checkmark means:** Symbol has ≥ 5 readings (the `_IV_RANK_MIN_SAMPLES` threshold). Below 5 it shows `3/5` style. At or above 5, IV Rank is actively computed and the +1/+2 scoring bonus can apply. Defined in `templates/admin.html:80–83`.
+
+**Where the +1/+2 IV Rank bonus is visible:** It is NOT a separate column — it's baked silently into the Score number. The only directly verifiable thing in the UI is that the IV Rank column shows a number (not `—`). If it does, the scoring bonus is being applied.
+
+---
+
+### 2. roadmap.md Created
+
+Created `roadmap.md` in the project root with the full production/monetization roadmap discussed in a prior session. Three tiers:
+- **Tier 1 — Foundation:** Reliable data source, proper auth, mobile-responsive UI
+- **Tier 2 — Sticky features:** Trade journal, alerts, PoP/max loss, backtesting summary
+- **Tier 3 — Monetization:** Freemium gating, broker integration (referral revenue), weekly digest
+
+Key insight documented: Reliable data + trade journal turns this from a screener into a workflow tool — the jump from "nice demo" to "I pay for this."
+
+---
+
+### 3. Tradier Integration — Researched & Decided (not yet built)
+
+**Agreed approach:**
+- Keep yfinance for stock price history (works fine, no rate limiting issues there)
+- Integrate Tradier for option chains (the part that gets blocked on Render)
+- Make the options provider pluggable behind a 2-method interface:
+  ```python
+  def get_expirations(symbol: str) -> list[str]: ...
+  def get_chain(symbol: str, expiry: str) -> tuple[pd.DataFrame, pd.DataFrame]: ...
+  ```
+  `YFinanceOptionsProvider` and `TradierOptionsProvider` both implement it. `options_engine.py` only ever sees the interface. Makes tests cleaner — mock the interface, not yfinance internals.
+
+**Why yfinance rate limits but Tradier won't:**
+Yahoo Finance has no official API — yfinance reverse-engineers web endpoints and Yahoo actively blocks data center IP ranges (AWS/Render). It's not request volume, it's IP-based blocking. Tradier is an official REST API with key-based auth — Render's IP is irrelevant.
+
+**Tradier rate limits confirmed (from docs):**
+- Production: **120 requests/minute** per API key
+- Sandbox: 60 requests/minute
+- Response headers: `X-Ratelimit-Used`, `X-Ratelimit-Available`, `X-Ratelimit-Expiry` — full visibility
+- Rolling 1-minute window (not fixed clock intervals)
+
+**Usage math:** 8 symbols × ~3 requests per hourly scan = ~24 requests/hour total. That's 0.3% of the allowed rate. Not a concern even with many concurrent users.
+
+**Tradier account note:** Real-time options data requires a **brokerage account** (free to open, no funding needed) — not just the developer portal API key. The developer sandbox gives delayed/simulated data.
+
+Source: https://docs.tradier.com/docs/rate-limiting
+
+---
+
+## Current State (end of 2026-07-12)
+
+- **App:** Live ✓
+- **PostgreSQL:** Live ✓ · 3 digest subscribers ✓ · 8 watchlist symbols ✓
+- **IV readings:** All 8 symbols at 70–93+ readings ✓ · IV Rank scoring active ✓
+- **Tests:** 72 passing ✓
+- **Per-symbol scans:** Still unverified — rate limit may or may not have cleared overnight
+- **roadmap.md:** Created in project root ✓
+- **Tradier research:** Complete — ready to build next session
+
+---
+
+## Pending for Next Session (first thing 2026-07-13)
+
+### 1. Verify rate limit has cleared (carry-over from 2026-07-12)
+Hit `/csp/NVDA` and `/cc/NVDA`. Should return results. If still blocked, check Render logs for `"Too Many Requests"` during last background scan. Diagnostic: `/admin/chain-raw?symbol=NVDA&side=calls`.
+
+### 2. Verify IV Rank scoring in production (carry-over)
+Once per-symbol scans work: IV Rank column should show a number (not `—`) on `/csp/TSLA` or `/csp/NVDA`. That's the only direct confirmation — the +1/+2 bonus is baked into the Score total.
+
+### 3. Check `/admin/iv-status` (carry-over)
+All 8 symbols should still be at 70–93+ readings.
+
+### 4. Build Tradier integration
+- Open a free Tradier brokerage account if not already done (needed for real-time data API key)
+- Implement pluggable options provider interface (2 methods: `get_expirations`, `get_chain`)
+- `YFinanceOptionsProvider` wraps existing calls
+- `TradierOptionsProvider` calls `https://api.tradier.com/v1/markets/options/chains`
+- Wire into `options_engine.py` via dependency injection or config flag
+
+---
+
+## Commits This Session (2026-07-12)
+- None — research and planning session only
+
+---
+
 ## Session: 2026-07-11
 
 ### 1. Yahoo Finance Rate Limiting Diagnosed
