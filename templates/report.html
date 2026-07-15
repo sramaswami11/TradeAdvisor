@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Report – {{ symbol }} – Trade Advisor</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='favicon.png') }}">
+</head>
+<body>
+
+<header class="site-header">
+    <a href="{{ url_for('dashboard') }}" class="brand">Trade Advisor</a>
+    <nav>
+        <a href="{{ url_for('dashboard') }}" class="nav-link">Dashboard</a>
+        <a href="{{ url_for('top_csp') }}" class="nav-link">Top CSP</a>
+        <a href="{{ url_for('top_cc') }}"  class="nav-link">Top CC</a>
+        {% if session.get('guest') %}
+        <a href="{{ url_for('login') }}"  class="nav-link">Sign in</a>
+        {% else %}
+        <a href="{{ url_for('logout') }}" class="nav-link muted">Logout</a>
+        {% endif %}
+    </nav>
+</header>
+
+<div class="container">
+
+    <a href="{{ url_for('dashboard') }}" class="report-back">← Dashboard</a>
+
+    <!-- Price Header -->
+    <div class="report-header">
+        <span class="report-symbol">{{ symbol }}</span>
+        {% if snap.current_price is not none %}
+        <span class="report-price">${{ snap.current_price }}</span>
+        {% if snap.change_pct is not none %}
+        <span class="report-change {{ 'positive' if snap.change_pct >= 0 else 'negative' }}">
+            {% if snap.change_pct >= 0 %}+{% endif %}{{ snap.change_pct }}%
+        </span>
+        {% endif %}
+        {% endif %}
+        {% if fundamentals.sector %}
+        <span class="report-sector">{{ fundamentals.sector }}{% if fundamentals.industry %} · {{ fundamentals.industry }}{% endif %}</span>
+        {% endif %}
+        <span class="report-meta">as of {{ snap.as_of }}</span>
+    </div>
+
+    <div class="report-grid">
+
+        <!-- Trend -->
+        <div class="report-card">
+            <h2>Trend</h2>
+            <ul class="report-rows">
+                <li>
+                    <span class="report-label">vs 200 DMA</span>
+                    <span class="report-value {{ 'signal-up' if above_200 else 'signal-down' }}">
+                        {{ 'Above' if above_200 else 'Below' }}
+                        {% if snap.dma_200 %}<small class="dim"> (${{ snap.dma_200 }})</small>{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">vs 50 DMA</span>
+                    <span class="report-value {{ 'signal-up' if above_50 else 'signal-down' }}">
+                        {{ 'Above' if above_50 else 'Below' }}
+                        {% if snap.dma_50 %}<small class="dim"> (${{ snap.dma_50 }})</small>{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">RSI (14)</span>
+                    <span class="report-value {% if snap.rsi_14 is not none %}{% if snap.rsi_14 <= 30 %}rsi-oversold{% elif snap.rsi_14 >= 70 %}rsi-overbought{% endif %}{% endif %}">
+                        {% if snap.rsi_14 is not none %}{{ snap.rsi_14 }} — {{ rsi_label }}{% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">Volatility (30d)</span>
+                    <span class="report-value {% if vol_label == 'High' %}signal-down{% elif vol_label == 'Moderate' %}signal-flat{% elif vol_label == 'Low' %}signal-up{% endif %}">
+                        {% if realized_vol is not none %}
+                            {{ (realized_vol * 100) | round(1) }}%
+                            {% if vol_label %} — {{ vol_label }}{% endif %}
+                            {% if vol_direction %}<small class="dim"> ({{ vol_direction }})</small>{% endif %}
+                        {% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">52-Week Range</span>
+                    <span class="report-value dim">
+                        {% if snap['52w_low'] is not none and snap['52w_high'] is not none %}
+                            ${{ snap['52w_low'] }} – ${{ snap['52w_high'] }}
+                        {% else %}—{% endif %}
+                    </span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Earnings -->
+        <div class="report-card">
+            <h2>Latest Earnings</h2>
+            <ul class="report-rows">
+                <li>
+                    <span class="report-label">EPS (actual)</span>
+                    <span class="report-value">
+                        {% if fundamentals.eps_actual is not none %}${{ fundamentals.eps_actual }}{% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">EPS (estimate)</span>
+                    <span class="report-value">
+                        {% if fundamentals.eps_estimate is not none %}${{ fundamentals.eps_estimate }}{% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">EPS Surprise</span>
+                    <span class="report-value {% if fundamentals.eps_surprise_pct is not none %}{{ 'signal-up' if fundamentals.eps_surprise_pct >= 0 else 'signal-down' }}{% endif %}">
+                        {% if fundamentals.eps_surprise_pct is not none %}
+                            {{ '+' if fundamentals.eps_surprise_pct >= 0 else '' }}{{ fundamentals.eps_surprise_pct }}%
+                        {% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">Revenue Growth (YoY)</span>
+                    <span class="report-value {% if fundamentals.revenue_growth is not none %}{{ 'signal-up' if fundamentals.revenue_growth >= 0 else 'signal-down' }}{% endif %}">
+                        {% if fundamentals.revenue_growth is not none %}
+                            {{ '+' if fundamentals.revenue_growth >= 0 else '' }}{{ fundamentals.revenue_growth }}%
+                        {% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">Gross Margin</span>
+                    <span class="report-value">
+                        {% if fundamentals.gross_margins is not none %}{{ fundamentals.gross_margins }}%{% else %}—{% endif %}
+                    </span>
+                </li>
+                <li>
+                    <span class="report-label">Operating Margin</span>
+                    <span class="report-value">
+                        {% if fundamentals.operating_margins is not none %}{{ fundamentals.operating_margins }}%{% else %}—{% endif %}
+                    </span>
+                </li>
+            </ul>
+        </div>
+
+        <!-- Options -->
+        <div class="report-card">
+            <h2>Options — Top CSP</h2>
+            {% if top_csp %}
+            <ul class="report-rows">
+                <li>
+                    <span class="report-label">Suggested Strike</span>
+                    <span class="report-value">${{ top_csp.strike }}</span>
+                </li>
+                <li>
+                    <span class="report-label">Expiry / DTE</span>
+                    <span class="report-value">{{ top_csp.expiry }} <small class="dim">({{ top_csp.dte }}d)</small></span>
+                </li>
+                <li>
+                    <span class="report-label">Bid Premium</span>
+                    <span class="report-value">{% if top_csp.bid > 0 %}${{ top_csp.bid }}{% else %}—{% endif %}</span>
+                </li>
+                <li>
+                    <span class="report-label">Annualized Yield</span>
+                    <span class="report-value signal-up">{{ top_csp.annualized }}%</span>
+                </li>
+                <li>
+                    <span class="report-label">Distance from Price</span>
+                    <span class="report-value">{{ top_csp.distance_pct }}%</span>
+                </li>
+                <li>
+                    <span class="report-label">P(Assignment)</span>
+                    <span class="report-value">
+                        {% if p_assignment is not none %}{{ p_assignment }}%{% else %}—{% endif %}
+                    </span>
+                </li>
+                {% if top_csp.iv_rank is not none %}
+                <li>
+                    <span class="report-label">IV Rank</span>
+                    <span class="report-value {{ 'ivr-high' if top_csp.iv_rank >= 50 else ('ivr-mid' if top_csp.iv_rank >= 30 else 'ivr-low') }}">
+                        {{ top_csp.iv_rank | int }}
+                    </span>
+                </li>
+                {% endif %}
+                <li>
+                    <span class="report-label">Score</span>
+                    <span class="report-value">
+                        <span class="badge badge-{{ top_csp.recommendation | lower }}">{{ top_csp.score }} {{ top_csp.recommendation }}</span>
+                    </span>
+                </li>
+            </ul>
+            <p class="report-csp-link">
+                <a href="{{ url_for('view_csp', symbol=symbol) }}" class="action-link">View all CSP options →</a>
+                &nbsp;·&nbsp;
+                <a href="{{ url_for('view_cc', symbol=symbol) }}" class="action-link">View CC options →</a>
+            </p>
+            {% else %}
+            <p class="empty-state" style="padding:20px 0;text-align:left;">{{ csp_reason_msg }}</p>
+            <p class="report-csp-link">
+                <a href="{{ url_for('view_csp', symbol=symbol) }}" class="action-link">Try full CSP scan →</a>
+            </p>
+            {% endif %}
+        </div>
+
+        <!-- Recommendation -->
+        <div class="report-card">
+            <h2>Recommendation</h2>
+            <ul class="report-rows">
+                <li>
+                    <span class="report-label">Signal</span>
+                    <span class="report-value {{ action | lower }}">{{ action }}</span>
+                </li>
+                <li>
+                    <span class="report-label">Confidence</span>
+                    <span class="report-value">{{ confidence }}%</span>
+                </li>
+                <li>
+                    <span class="report-label">Wheel Candidate</span>
+                    <span class="verdict-badge {{ 'verdict-yes' if is_wheel_candidate else 'verdict-no' }}">
+                        {{ wheel_label }}
+                    </span>
+                </li>
+            </ul>
+            {% if result.reasons %}
+            <ul class="reasons-list">
+                {% for r in result.reasons %}
+                <li>{{ r }}</li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </div>
+
+    </div>
+
+    <p class="freshness-note">Prices cached 15 min · Fundamentals cached 4h · Options via Yahoo Finance · Verify with your broker before trading</p>
+
+</div>
+
+<div id="scan-overlay" class="scan-overlay">
+    <div class="spinner"></div>
+    <p>Loading report for <strong id="scan-label"></strong>&hellip;</p>
+</div>
+
+</body>
+</html>

@@ -16,7 +16,7 @@ logging.basicConfig(level=logging.INFO)
 _startup_logger = logging.getLogger(__name__)
 _startup_logger.info(f"yfinance version: {yf.__version__}")
 
-from market_data.provider import fetch_snapshot
+from market_data.provider import fetch_snapshot, fetch_fundamentals
 from database import (
     init_db,
     create_user,
@@ -721,6 +721,79 @@ def view_cc(symbol):
         opportunities=opportunities,
         scan_message=scan_message,
         delta_note=delta_note,
+    )
+
+
+@app.route("/report/<symbol>")
+def report(symbol):
+    if not is_authenticated():
+        return redirect(url_for("login"))
+
+    symbol = normalize_symbol(symbol)
+    if not symbol:
+        return redirect(url_for("dashboard"))
+
+    snap = fetch_snapshot(symbol)
+    result = get_trade_recommendation(snap)
+    fundamentals = fetch_fundamentals(symbol)
+
+    try:
+        csp_opps, csp_reason = options_engine.find_csp_opportunities(symbol)
+    except Exception:
+        csp_opps, csp_reason = [], "scan_error"
+
+    top_csp = csp_opps[0] if csp_opps else None
+    csp_reason_msg = _SCAN_REASON_MESSAGES.get(csp_reason, "No qualifying contracts found.")
+
+    price = snap.get("current_price")
+    dma50 = snap.get("dma_50")
+    dma200 = snap.get("dma_200")
+    rsi = snap.get("rsi_14") or 0
+
+    above_50 = bool(price and dma50 and price > dma50)
+    above_200 = bool(price and dma200 and price > dma200)
+    rsi_label = "Oversold" if rsi <= 30 else "Overbought" if rsi >= 70 else "Neutral"
+
+    realized_vol = snap.get("realized_vol")
+    vol_direction = snap.get("vol_direction")
+    if realized_vol:
+        if realized_vol < 0.20:
+            vol_label = "Low"
+        elif realized_vol < 0.35:
+            vol_label = "Moderate"
+        else:
+            vol_label = "High"
+    else:
+        vol_label = None
+
+    confidence = result.get("confidence", 0)
+    action = result.get("action", "HOLD")
+    is_wheel_candidate = bool(csp_opps) and confidence >= 50
+    wheel_label = "Good Wheel Candidate" if is_wheel_candidate else "Not a Wheel Candidate"
+
+    p_assignment = None
+    if top_csp and top_csp.get("delta") is not None:
+        p_assignment = round(abs(float(top_csp["delta"])) * 100)
+
+    return render_template(
+        "report.html",
+        symbol=symbol,
+        snap=snap,
+        result=result,
+        fundamentals=fundamentals,
+        top_csp=top_csp,
+        csp_reason_msg=csp_reason_msg,
+        above_50=above_50,
+        above_200=above_200,
+        rsi_label=rsi_label,
+        realized_vol=realized_vol,
+        vol_direction=vol_direction,
+        vol_label=vol_label,
+        confidence=confidence,
+        action=action,
+        is_wheel_candidate=is_wheel_candidate,
+        wheel_label=wheel_label,
+        p_assignment=p_assignment,
     )
 
 

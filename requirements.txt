@@ -15,6 +15,7 @@ numpy==1.26.2
 # Financial Data
 yfinance==1.5.1
 requests
+lxml
 
 
 

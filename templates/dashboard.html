@@ -53,6 +53,7 @@
                     <th title="Signal based on trend and momentum: BUY / SELL / HOLD">Rating</th>
                     <th title="How many indicators agree with the signal (0–100)">Confidence</th>
                     <th>Rationale</th>
+                    <th title="Full analysis report for this ticker">Report</th>
                     <th title="Scan for Cash-Secured Put opportunities on this ticker">CSP</th>
                     <th title="Scan for Covered Call opportunities on this ticker">CC</th>
                     <th></th>
@@ -82,6 +83,7 @@
                     <td>{{ t.confidence }}%</td>
 
                     <td><a class="action-link" href="{{ url_for('dashboard', view=t.symbol) }}">View</a></td>
+                    <td><a class="action-link report-link" href="{{ url_for('report', symbol=t.symbol) }}">Report</a></td>
                     <td><a class="action-link" href="{{ url_for('view_csp', symbol=t.symbol) }}">CSP</a></td>
                     <td><a class="action-link" href="{{ url_for('view_cc',  symbol=t.symbol) }}">CC</a></td>
                     <td class="row-controls">
@@ -131,12 +133,12 @@
 </div>
 
 <script>
-document.querySelectorAll('a[href^="/csp/"], a[href^="/cc/"]').forEach(function(link) {
+document.querySelectorAll('a[href^="/csp/"], a[href^="/cc/"], a[href^="/report/"]').forEach(function(link) {
     link.addEventListener('click', function() {
         var href = this.getAttribute('href');
         var parts = href.split('/');
         var symbol = parts[parts.length - 1];
-        var type = href.indexOf('/csp/') !== -1 ? 'CSP' : 'CC';
+        var type = href.indexOf('/csp/') !== -1 ? 'CSP' : href.indexOf('/cc/') !== -1 ? 'CC' : 'Report';
         document.getElementById('scan-label').textContent = symbol + ' — ' + type;
         document.getElementById('scan-overlay').classList.add('active');
     });
