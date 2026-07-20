@@ -27,7 +27,8 @@ def _make_options_provider():
     key = os.environ.get("TRADIER_API_KEY")
     if key:
         from market_data.tradier import TradierOptionsProvider
-        return TradierOptionsProvider(key)
+        sandbox = os.environ.get("TRADIER_SANDBOX", "").lower() == "true"
+        return TradierOptionsProvider(key, sandbox=sandbox)
     return None
 
 
@@ -274,9 +275,9 @@ class OptionsEngine:
                             in_primary = delta is None or (0.25 <= delta <= 0.30)
 
                         score = (
-                            self._score_csp(signals, yield_pct, annualized, distance_pct, iv_rank)
+                            self._score_csp(signals, yield_pct, annualized, distance_pct, iv_rank, near_earnings)
                             if side == "csp"
-                            else self._score_cc(signals, yield_pct, annualized, distance_pct, iv_rank)
+                            else self._score_cc(signals, yield_pct, annualized, distance_pct, iv_rank, near_earnings)
                         )
 
                         opp = {
@@ -492,7 +493,7 @@ class OptionsEngine:
     # -----------------------------------
     # Scoring
     # -----------------------------------
-    def _score_csp(self, signals, yield_pct, annualized, distance_pct, iv_rank=None):
+    def _score_csp(self, signals, yield_pct, annualized, distance_pct, iv_rank=None, near_earnings=False):
 
         score = 0
 
@@ -529,9 +530,12 @@ class OptionsEngine:
         if iv_rank is not None and iv_rank >= 70:
             score += 1
 
-        return score
+        if near_earnings:
+            score -= 2
 
-    def _score_cc(self, signals, yield_pct, annualized, distance_pct, iv_rank=None):
+        return max(score, 0)
+
+    def _score_cc(self, signals, yield_pct, annualized, distance_pct, iv_rank=None, near_earnings=False):
 
         score = 0
 
@@ -570,7 +574,10 @@ class OptionsEngine:
         if iv_rank is not None and iv_rank >= 70:
             score += 1
 
-        return score
+        if near_earnings:
+            score -= 2
+
+        return max(score, 0)
 
     # -----------------------------------
     # Greeks

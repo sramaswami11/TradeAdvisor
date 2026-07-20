@@ -218,6 +218,28 @@ def test_score_cc_iv_rank_adds_two_at_70():
     assert scored == base + 2
 
 
+def test_score_csp_near_earnings_deducts_two():
+    engine = OptionsEngine()
+    signals = {"above_200_dma": True, "above_50_dma": True, "rsi_state": "neutral"}
+    without = engine._score_csp(signals, yield_pct=0.015, annualized=0.25, distance_pct=-0.08)
+    with_earnings = engine._score_csp(signals, yield_pct=0.015, annualized=0.25, distance_pct=-0.08, near_earnings=True)
+    assert with_earnings == without - 2
+
+
+def test_score_cc_near_earnings_deducts_two():
+    engine = OptionsEngine()
+    signals = {"above_200_dma": True, "above_50_dma": True, "rsi_state": "overbought"}
+    without = engine._score_cc(signals, yield_pct=0.015, annualized=0.25, distance_pct=0.08)
+    with_earnings = engine._score_cc(signals, yield_pct=0.015, annualized=0.25, distance_pct=0.08, near_earnings=True)
+    assert with_earnings == without - 2
+
+
+def test_score_csp_near_earnings_floor_at_zero():
+    engine = OptionsEngine()
+    score = engine._score_csp({}, yield_pct=0.001, annualized=0.05, distance_pct=-0.03, near_earnings=True)
+    assert score == 0
+
+
 # -------------------------
 # _label
 # -------------------------

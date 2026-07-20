@@ -12,12 +12,14 @@ from types import SimpleNamespace
 
 logger = logging.getLogger(__name__)
 
-_BASE = "https://api.tradier.com/v1"
+_BASE_PROD    = "https://api.tradier.com/v1"
+_BASE_SANDBOX = "https://sandbox.tradier.com/v1"
 
 
 class TradierOptionsProvider:
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, sandbox: bool = False):
+        self._base = _BASE_SANDBOX if sandbox else _BASE_PROD
         self._session = requests.Session()
         self._session.headers.update({
             "Authorization": f"Bearer {api_key}",
@@ -28,7 +30,7 @@ class TradierOptionsProvider:
         """Return list of expiration date strings (YYYY-MM-DD) for the symbol."""
         try:
             resp = self._session.get(
-                f"{_BASE}/markets/options/expirations",
+                f"{self._base}/markets/options/expirations",
                 params={"symbol": symbol.upper(), "includeAllRoots": "false"},
                 timeout=10,
             )
@@ -49,7 +51,7 @@ class TradierOptionsProvider:
         """
         try:
             resp = self._session.get(
-                f"{_BASE}/markets/options/chains",
+                f"{self._base}/markets/options/chains",
                 params={
                     "symbol": symbol.upper(),
                     "expiration": expiry,
