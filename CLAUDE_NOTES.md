@@ -2,6 +2,347 @@
 
 ---
 
+## Session: 2026-07-19
+
+### 1. Tradier SSN/DOB Risk — Decision Made
+
+Evaluated whether giving PII (SSN, DOB) to Tradier to open a brokerage account was worth it for API access.
+
+**Conclusion: Not worth it for this use case.**
+- Tradier is FINRA-regulated — SSN/DOB collection is legally required (KYC/AML), not optional
+- Risk is real: adds SSN to another data store, may trigger credit pull, creates an ongoing brokerage account relationship
+- The purpose mismatch is the key issue: high PII exposure just to avoid a $29/mo API fee for a dev tool
+- **Massive $29/mo (email-only signup, POC already built) is the clear preferred path**
+
+---
+
+## Current State (end of 2026-07-19)
+
+- **App:** Live on Render ✓ · commit `bc776c1` (unchanged today)
+- **Tradier sandbox URL support:** Code complete, 72 tests passing — NOT committed, NOT activated
+- **Data source:** Still on yfinance — blocked on Render for options
+- **Report page:** `/report/<symbol>` live — `/report/CSCO` still unverified on Render (EPS fields, all four cards)
+- **Wheel Candidate fix:** Not started — deferred again
+
+---
+
+## Pending for Next Session (2026-07-20)
+
+### 1. Sign up for Massive Options Starter ($29/mo) — first thing
+Email-only signup at massive.com. Grab API key. Run `polygon_poc/` locally to confirm greeks populate. Then integrate `MassiveOptionsProvider` into TradeAdvisor using the same 2-method interface (`get_expirations`, `get_chain`).
+
+### 2. Verify `/report/CSCO` on Render (carried over 4 days)
+Confirm EPS fields show `$1.06 actual / $1.04 estimate / +2.29%` and all four cards render.
+
+### 3. Wheel Candidate verdict fix (carried over 4 days)
+In report route, change `is_wheel_candidate`:
+```python
+# current
+bool(csp_opps) and confidence >= 50
+# proposed
+bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))
+```
+
+### 4. Agentic build — Phase 1 (when ready)
+Formalize tool contracts for `fetch_snapshot`, `fetch_options_chain`, `score_csp` into explicit input/output schemas per `TAredesign.md`.
+
+---
+
+## Commits This Session (2026-07-19)
+- None — research and decision session only
+
+---
+
+## Session: 2026-07-18
+
+### 1. Massive.com Pricing — Checked
+
+**Options Basic ($0/mo):** Includes All US Options Tickers, 5 API Calls/Minute, 2 Years Historical,
+Technical Indicators. But **Snapshot is crossed out** — the exact endpoint the POC needs.
+Free tier won't work for our use case.
+
+**Options Starter ($29/mo):** Includes everything — Snapshot ✓, Real-time Greeks and IV ✓,
+Daily Open Interest ✓, Unlimited API Calls ✓, 15-minute delayed data ✓.
+This tier unblocks the `polygon_poc/` immediately.
+
+**Decision deferred** — see section 3 below.
+
+---
+
+### 2. Tradier Sandbox — Researched
+
+**Data quality confirmed from docs:** Tradier sandbox uses **real market data, 15-minute delayed**
+(not simulated). Greeks available via ORATS integration (delta, gamma, theta, vega, rho, phi).
+`greeks=true` param already in our `tradier.py` — no changes needed there.
+
+**Blocker discovered:** Tradier requires a **full brokerage account even for sandbox access** —
+SSN, DOB, the works. It's a FINRA-regulated broker-dealer. There is no lightweight
+developer-only signup path.
+
+---
+
+### 3. Tradier Sandbox URL Support — BUILT (not yet activated)
+
+Added `TRADIER_SANDBOX=true` env var support so the base URL switches between production
+and sandbox without code changes.
+
+**`market_data/tradier.py`:**
+- Replaced module-level `_BASE` constant with `_BASE_PROD` and `_BASE_SANDBOX`
+- `TradierOptionsProvider.__init__` now accepts `sandbox: bool = False`
+- Constructor sets `self._base` accordingly; both `get_expirations` and `get_chain` use `self._base`
+
+**`options_engine.py`:**
+- `_make_options_provider()` reads `TRADIER_SANDBOX` env var
+- Passes `sandbox=True` to constructor when set
+
+**`.env`:**
+- Added `TRADIER_API_KEY=` and `TRADIER_SANDBOX=true` placeholders
+
+**72/72 tests passing** — no `TRADIER_API_KEY` in test env so yfinance/mock path runs as before.
+
+---
+
+### 4. Data Source Decision — Pending
+
+| Option | Cost | Data | Friction |
+|---|---|---|---|
+| Massive Options Starter | $29/mo | Real, 15-min delayed | Email signup, POC already built |
+| Tradier (sandbox or prod) | Free | Real, 15-min delayed | Full brokerage account (SSN required) |
+| Keep yfinance | Free | 15-min delayed, blocked on Render | No change |
+
+**Leaning toward Massive $29/mo** — email-only signup, POC already built and working mechanically,
+no personal data required. $29/mo is reasonable to validate before committing.
+
+---
+
+## Current State (end of 2026-07-18)
+
+- **App:** Live on Render ✓ · commit `bc776c1` (unchanged today)
+- **Tradier sandbox URL support:** Code complete, 72 tests passing — NOT activated (no key)
+- **Data source:** Still on yfinance — blocked on Render for options
+- **Report page:** `/report/<symbol>` live — still unverified (lxml install, EPS fields)
+- **Wheel Candidate fix:** Not started — deferred again
+
+---
+
+## Pending for Next Session (2026-07-19)
+
+### 1. Pick a data source (first decision of the day)
+- **Massive $29/mo** → sign up, grab API key, run `polygon_poc/` locally to confirm greeks populate,
+  then integrate `MassiveOptionsProvider` into TradeAdvisor using the same 2-method interface
+- **Tradier** → open free brokerage account (no funding needed, but SSN required),
+  grab sandbox token, drop into `.env` as `TRADIER_API_KEY`, hit `/csp/NVDA` locally
+
+### 2. Verify `/report/CSCO` on Render (carried over 3 days)
+Confirm EPS fields show `$1.06 actual / $1.04 estimate / +2.29%` and all four cards render.
+
+### 3. Wheel Candidate verdict fix (carried over 3 days)
+In report route, change `is_wheel_candidate`:
+```python
+# current
+bool(csp_opps) and confidence >= 50
+# proposed
+bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))
+```
+
+### 4. Agentic build — Phase 1 (when ready)
+Formalize tool contracts for `fetch_snapshot`, `fetch_options_chain`, `score_csp`
+into explicit input/output schemas per `TAredesign.md`.
+
+---
+
+## Commits This Session (2026-07-18)
+- None — research + code change for Tradier sandbox URL support (uncommitted)
+
+---
+
+## Session: 2026-07-17
+
+### 1. Schwab Trader API — Commercial Use Research
+
+Investigated whether Schwab Trader API (formerly TD Ameritrade API) could power a shared
+data feed for TradeAdvisor (one set of credentials, serve all users).
+
+**Website ToS analyzed** — turned out to be the developer portal ToS only, not the API agreement.
+The actual governing document is the **Developer Program Agreement** (accepted at registration).
+
+**Searched for TD Ameritrade / Schwab API commercial terms. Key findings:**
+
+Two tiers exist:
+- **Individual (free)** — requires Schwab brokerage account, OAuth per-user, personal/restricted-distribution only. **Explicitly prohibits data redistribution and large-scale integrations.**
+- **Commercial / Redistribution** — custom contract + exchange-data agreements. Likely $thousands/month.
+
+**Verdict:** Using one set of Schwab credentials to serve multiple users = prohibited under free tier.
+
+**The one permitted architecture:** Per-user OAuth — each TradeAdvisor user connects their own Schwab account. This is permitted but narrows the audience to Schwab account holders.
+
+---
+
+### 2. What People Actually Build with Schwab Trader API
+
+Researched real use cases:
+- Personal algo bots (most common) — fetch signal, auto-place trade
+- Portfolio monitors — track positions and P&L in custom UI
+- Backtesting engines — historical options chains
+- Open-source wrappers — `schwab-py`, `schwabr`, `lumibot`
+
+**The real unlock is order execution** — not just better data quality. Per-user OAuth becomes a
+*feature* ("connect your Schwab account to trade directly from scan results") rather than a limitation.
+This turns TradeAdvisor from a screener into a trading workflow.
+
+**Near-term verdict:** Tradier for data (designed for multi-user apps, ~$10–50/mo or free sandbox).
+**Long-term direction:** Schwab per-user OAuth + order execution = compelling product differentiator.
+
+---
+
+### 3. Agentic AI Redesign — Blueprint Created
+
+Discussed transforming TradeAdvisor into a production-grade agentic AI system, using the
+framework from Aishwarya Srinivasan's (Gen Academy) agentic AI system design video.
+
+**Full blueprint written to `TAredesign.md`** in the project root.
+
+Key design decisions documented:
+- **Single-agent** to start (workflow is linear enough)
+- **Model routing**: Haiku for intent classification/routing, Sonnet/Opus only for synthesis and ambiguous-signal reasoning
+- **Tool contracts**: read tools (no gate), low-risk write tools, high-risk write tools (approval gate)
+- **State vs memory**: workflow state in Redis/Postgres per session; long-term memory in existing Postgres tables
+- **Orchestration**: deterministic state machine first, agentic reasoning only where genuinely needed
+- **Approval gates**: `place_order` always requires explicit user confirmation — never fires from model inference alone
+- **Build order**: tool contracts → orchestration → synthesis Claude call → Schwab order execution → evals
+
+**What already exists (no rework needed):** fetch_snapshot, fetch_options_chain, score_csp/cc,
+fetch_fundamentals, iv_history, background scanner, 72 pytest tests.
+What's missing: orchestration layer + synthesis model call.
+
+---
+
+## Current State (end of 2026-07-17)
+
+- **App:** Live on Render ✓ · commit `bc776c1` (unchanged today)
+- **Report page:** `/report/<symbol>` live — not re-verified today
+- **polygon_poc/:** Built, blocked on free tier — Massive pricing still unchecked
+- **Tradier:** Code complete, not yet activated
+- **TAredesign.md:** Agentic AI system design blueprint created ✓
+- **Wheel Candidate fix:** Not started — deferred again
+
+---
+
+## Pending for Next Session (2026-07-18)
+
+### 1. Check Massive.com/pricing → Options tab (2 min — carried over 2 days)
+- ≤ $29/mo → upgrade, run POC, integrate into TradeAdvisor
+- $79+/mo → drop Massive, go Tradier path
+
+### 2. Tradier path (if Massive too expensive)
+Add `TRADIER_SANDBOX=true` env var support to `market_data/tradier.py` to flip base URL
+to `https://sandbox.tradier.com/v1`. Set key on Render, hit `/csp/NVDA` to verify.
+
+### 3. Verify `/report/CSCO` on Render
+Confirm EPS fields show `$1.06 actual / $1.04 estimate / +2.29%` (lxml in requirements.txt).
+Confirm all four cards render correctly.
+
+### 4. Wheel Candidate verdict fix
+In report route, change `is_wheel_candidate` logic:
+```python
+# current
+bool(csp_opps) and confidence >= 50
+# proposed
+bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))
+```
+
+### 5. Agentic build — Phase 1 (when ready to start)
+Formalize tool contracts: clean up `fetch_snapshot`, `fetch_options_chain`, `score_csp`
+into explicit input/output schemas. First step toward the TAredesign.md blueprint.
+
+---
+
+## Commits This Session (2026-07-17)
+- None — research, brainstorming, and design session only. `TAredesign.md` created (untracked).
+
+---
+
+## Session: 2026-07-16
+
+### 1. `/report/CSCO` Render Verification — DEFERRED
+
+Carried over from 2026-07-15 but not verified today — session pivoted to the Polygon/Massive POC.
+Still pending: confirm EPS fields populate (lxml installed), all four cards render correctly.
+
+---
+
+### 2. Wheel Candidate Verdict Logic — DEFERRED
+
+Also carried over. Not started today.
+
+Current logic: `bool(csp_opps) and confidence >= 50` — too conservative.
+Proposed: `bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))`
+File: wherever `is_wheel_candidate` is set in `app.py` or the report route.
+
+---
+
+### 3. Polygon/Massive POC — BUILT, Data Access Blocked on Free Tier
+
+Built a standalone Flask POC at `polygon_poc/` (subdirectory of TradeAdvisor repo).
+Single-file app: fetches `/v3/snapshot/options/{symbol}` and renders a table with
+strike, expiry, DTE, bid, ask, mid, delta, IV, OI. Handles pagination, null greeks warning.
+
+**Two fixes made during the session:**
+- f-string backslash syntax error (Python 3.11 — removed redundant conditional, `_fmt` handles None)
+- Form submitted to `/` instead of `/chain/<symbol>` — added redirect in index route
+
+**Findings:**
+- `api.polygon.io` is dead — TLS handshake timeout (domain moved post-rebrand)
+- `api.massive.com` is the correct base URL — key authenticates fine
+- Free tier error: *"You are not entitled to this data. Please upgrade your plan at https://massive.com/pricing"*
+- `/v3/snapshot/options` (greeks + live quotes) requires a paid options plan
+
+**Decision pending:** Check massive.com/pricing → Options tab to see tier prices.
+- If ≤ ~$29/mo → upgrade, POC immediately works, integrate into TradeAdvisor
+- If $79+/mo → skip Massive, pivot to Tradier (code already in repo, needs URL fix only)
+
+**POC is ready to run:** `polygon_poc/app.py` + `requirements.txt` + `runtime.txt` committed.
+Render deploy: new web service from same repo, Root Directory = `polygon_poc`, add `POLYGON_API_KEY`.
+`POLYGON_BASE_URL` env var overrides the default `api.massive.com` if needed.
+
+---
+
+## Current State (end of 2026-07-16)
+
+- **App:** Live on Render ✓ · commit `bc776c1` (unchanged today)
+- **Report page:** `/report/<symbol>` live — not re-verified today (lxml install unconfirmed)
+- **polygon_poc/:** Built and working mechanically — blocked on free tier for options data
+- **Wheel Candidate fix:** Not started — deferred to tomorrow
+
+---
+
+## Pending for Next Session (2026-07-17)
+
+### 1. Check Massive options pricing (first thing — 2 minutes)
+Go to https://massive.com/pricing → click **Options** tab.
+- ≤ $29/mo → upgrade, run POC, verify greeks populate, then integrate into TradeAdvisor
+- $79+/mo → go Tradier path instead
+
+### 2. Tradier path (if Massive too expensive)
+`market_data/tradier.py` hardcodes `_BASE = "https://api.tradier.com/v1"`.
+Add `TRADIER_SANDBOX=true` env var support to flip base URL to `https://sandbox.tradier.com/v1`.
+Then set key on Render and hit `/csp/NVDA` to confirm live data returns.
+
+### 3. Verify `/report/CSCO` on Render
+Confirm EPS fields populate (should show `$1.06 actual / $1.04 estimate / +2.29%`).
+Confirm all four cards render correctly.
+
+### 4. Wheel Candidate verdict fix (quick code change)
+`bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))`
+Find `is_wheel_candidate` in the report route and apply the fix. Test on CSCO.
+
+---
+
+## Commits This Session (2026-07-16)
+- None — polygon_poc built locally, not yet committed
+
+---
+
 ## Session: 2026-07-15
 
 ### 1. Vision Assessment — Full Ticker Report
