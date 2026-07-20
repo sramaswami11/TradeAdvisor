@@ -178,7 +178,7 @@ class OptionsEngine:
                 expiry_date_obj = datetime.strptime(expiry, "%Y-%m-%d").date()
                 near_earnings = (
                     earnings_date is not None
-                    and abs((expiry_date_obj - earnings_date).days) <= 5
+                    and earnings_date <= expiry_date_obj
                 )
 
                 if i > 0 and self._provider is None:

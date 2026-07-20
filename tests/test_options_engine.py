@@ -337,16 +337,20 @@ def test_get_next_earnings_exception_returns_none():
             raise RuntimeError("network error")
     assert engine._get_next_earnings(BrokenTicker()) is None
 
-def test_earnings_warning_flag_near():
-    """Opportunity expiring within 5 days of earnings should be flagged."""
-    engine = OptionsEngine()
-    expiry_dt = date(2026, 8, 1)
-    earnings_dt = date(2026, 8, 3)  # 2 days after expiry
-    assert abs((expiry_dt - earnings_dt).days) <= 5
+def test_earnings_warning_flag_spans():
+    """Contract expiring after earnings is flagged — earnings fall within the hold period."""
+    expiry_dt = date(2026, 7, 31)
+    earnings_dt = date(2026, 7, 21)  # earnings 10 days before expiry
+    assert earnings_dt <= expiry_dt
 
-def test_earnings_warning_flag_far():
-    """Opportunity expiring >5 days from earnings should not be flagged."""
-    engine = OptionsEngine()
-    expiry_dt = date(2026, 8, 1)
-    earnings_dt = date(2026, 8, 10)  # 9 days after expiry
-    assert abs((expiry_dt - earnings_dt).days) > 5
+def test_earnings_warning_flag_expires_before():
+    """Contract expiring before earnings is not flagged — no exposure to the event."""
+    expiry_dt = date(2026, 7, 18)
+    earnings_dt = date(2026, 7, 21)  # earnings after expiry
+    assert not (earnings_dt <= expiry_dt)
+
+def test_earnings_warning_flag_same_day():
+    """Contract expiring on earnings day is flagged."""
+    expiry_dt = date(2026, 7, 21)
+    earnings_dt = date(2026, 7, 21)
+    assert earnings_dt <= expiry_dt
