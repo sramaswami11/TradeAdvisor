@@ -2,6 +2,86 @@
 
 ---
 
+## Session: 2026-07-20
+
+### 1. yfinance IP Blocking — Hosting Change Not Worth It
+
+Investigated whether a paid Render plan or different hosting provider (DigitalOcean, Hetzner, etc.) could avoid Yahoo Finance's data center IP blocking.
+
+**Conclusion: No hosting change reliably solves this under $29/mo.**
+- Yahoo blocks data center IP ranges (AWS, GCP, independent VPS) — it's IP classification, not request volume
+- Render paid plans still use AWS — upgrading doesn't change the outbound IP range
+- Smaller VPS (Hetzner, DigitalOcean) might work temporarily but Yahoo expands blocklists over time
+- Residential proxies are the only reliable fix, but cost $50–200+/mo — more than Massive
+- **Confirmed: Massive $29/mo is the right path. Proceeding tomorrow.**
+
+---
+
+### 2. Earnings Penalty in CSP/CC Scoring — BUILT & DEPLOYED (commits `98ec07a`, `aaf1621`)
+
+**Problem identified:** IBKR showing score 10 STRONG on Top CSP despite earnings the next day (July 21). Scoring function had no awareness of earnings proximity — the `near_earnings` flag was display-only (⚠ EARN badge) with zero effect on score. Pre-earnings IV inflation was actually boosting the score by inflating annualized yield.
+
+**Fix 1 — Add -2 penalty (commit `98ec07a`):**
+- `_score_csp` and `_score_cc` both accept `near_earnings=False` parameter
+- Deduct 2 points when `near_earnings=True`; floor at 0 via `max(score, 0)`
+- Call site in `_find_opportunities` passes `near_earnings` to whichever scorer runs
+- 3 new tests: deduction for CSP, deduction for CC, floor at zero
+
+**Bug found during verification:** IBKR still showed 10 STRONG after deploy + cache clear.
+Root cause: original check was `abs(expiry - earnings) <= 5 days`. IBKR expiry July 31, earnings July 21 = 10 days apart → no flag, no penalty. But the contract spans the earnings event — holder is fully exposed.
+
+**Fix 2 — Correct the earnings check (commit `aaf1621`):**
+- Changed from `abs((expiry_date_obj - earnings_date).days) <= 5`
+- To `earnings_date <= expiry_date_obj`
+- Meaning: flag any contract whose expiry is on or after earnings date (earnings fall within the hold period)
+- Contracts expiring before earnings are correctly unaffected
+- Updated 3 tests to match new semantics (spans, expires-before, same-day cases)
+
+**Verified on Render:** IBKR July 31 contract dropped from 10 STRONG → 8 STRONG, ⚠ EARN badge showing in Expiry column. Cache cleared via `/admin` after each deploy.
+
+**76/76 tests passing.**
+
+---
+
+## Current State (end of 2026-07-20)
+
+- **App:** Live on Render ✓ · latest commit `aaf1621`
+- **Earnings penalty:** Active — CSP/CC contracts spanning an earnings event score -2 ✓
+- **Data source:** Still on yfinance — blocked on Render for options (Massive $29/mo is next)
+- **Tradier sandbox URL support:** Committed (`98ec07a`) · NOT activated (no key)
+- **Report page:** `/report/<symbol>` live — `/report/CSCO` still unverified (EPS fields, all four cards)
+- **Wheel Candidate fix:** Not started — deferred again
+
+---
+
+## Pending for Next Session (2026-07-21)
+
+### 1. Sign up for Massive Options Starter ($29/mo) — first thing
+Email-only signup at massive.com. Grab API key. Run `polygon_poc/` locally to confirm greeks populate. Then integrate `MassiveOptionsProvider` into TradeAdvisor using same 2-method interface (`get_expirations`, `get_chain`).
+
+### 2. Verify `/report/CSCO` on Render (carried over 5 days)
+Confirm EPS fields show `$1.06 actual / $1.04 estimate / +2.29%` and all four cards render.
+
+### 3. Wheel Candidate verdict fix (carried over 5 days)
+In report route, change `is_wheel_candidate`:
+```python
+# current
+bool(csp_opps) and confidence >= 50
+# proposed
+bool(csp_opps) and (confidence >= 50 or (top_csp.score >= 8 and signals.get("above_200_dma")))
+```
+
+### 4. Agentic build — Phase 1 (when ready)
+Formalize tool contracts for `fetch_snapshot`, `fetch_options_chain`, `score_csp` into explicit input/output schemas per `TAredesign.md`.
+
+---
+
+## Commits This Session (2026-07-20)
+- `98ec07a` — Add Tradier sandbox support; penalize CSP/CC score -2 when near earnings
+- `aaf1621` — Fix earnings penalty — flag any contract that spans an earnings event
+
+---
+
 ## Session: 2026-07-19
 
 ### 1. Tradier SSN/DOB Risk — Decision Made
