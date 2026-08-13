@@ -768,7 +768,10 @@ def report(symbol):
 
     confidence = result.get("confidence", 0)
     action = result.get("action", "HOLD")
-    is_wheel_candidate = bool(csp_opps) and confidence >= 50
+    is_wheel_candidate = bool(csp_opps) and (
+        confidence >= 50
+        or (top_csp.get("score", 0) >= 8 and above_200)
+    )
     wheel_label = "Good Wheel Candidate" if is_wheel_candidate else "Not a Wheel Candidate"
 
     p_assignment = None
