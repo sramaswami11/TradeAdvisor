@@ -252,6 +252,12 @@ def fetch_fundamentals(symbol: str) -> dict:
         return result
     except Exception as e:
         logger.error(f"{symbol}: fundamentals fetch failed → {e}")
-        return {}
+        return {
+            "sector": None, "industry": None,
+            "gross_margins": None, "operating_margins": None,
+            "revenue_growth": None, "earnings_growth": None,
+            "trailing_eps": None, "forward_eps": None,
+            "eps_estimate": None, "eps_actual": None, "eps_surprise_pct": None,
+        }
     finally:
         _yf_semaphore.release()
