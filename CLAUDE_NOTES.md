@@ -2,6 +2,144 @@
 
 ---
 
+## Session: 2026-08-13
+
+### 1. Render PostgreSQL Reconnected — DONE
+
+Created new free-tier PostgreSQL on Render dashboard and updated `DATABASE_URL` env var on the tradeadvisor web service. App came back up — login works, dashboard loads, schema auto-recreated by `init_db()`.
+
+**Post-reconnect data to restore:**
+- Re-add watchlist: AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA (dashboard UI)
+- Re-register digest users: sign into Render app with sramaswami2021@gmail.com, sramaswami2025@gmail.com, tradeadvisor2025@gmail.com (or use Admin → Add Subscriber)
+- IV readings will re-accumulate passively — no manual action, takes a few hours
+
+---
+
+### 2. `/report` 500 When Fundamentals Fetch Fails — FIXED (commit `2149f24`)
+
+**Symptom:** `/report/SPY` crashed with `jinja2.exceptions.UndefinedError: 'dict object' has no attribute 'eps_surprise_pct'`.
+
+**Root cause:** `fetch_fundamentals()` in `market_data/provider.py` caught the yfinance rate-limit exception and returned `{}`. The Jinja2 template accesses every key via dot notation (`fundamentals.eps_surprise_pct`, etc.) — missing keys on a dict raise `UndefinedError`, not just render `—`.
+
+**Fix:** Changed the exception handler at line 255 to return the full null schema:
+```python
+return {
+    "sector": None, "industry": None,
+    "gross_margins": None, "operating_margins": None,
+    "revenue_growth": None, "earnings_growth": None,
+    "trailing_eps": None, "forward_eps": None,
+    "eps_estimate": None, "eps_actual": None, "eps_surprise_pct": None,
+}
+```
+Page now loads with `—` for all earnings fields when yfinance is rate-limited.
+
+---
+
+### 3. Wheel Candidate Verdict Fix — DONE (commit `94517fa`)
+
+**Problem:** CSCO (and similar tickers) with IV Rank 100, STRONG 10-point CSP, and above 200 DMA were showing "Not a Wheel Candidate" because StrategyEngine confidence was 25% (penalized for being below 50 DMA).
+
+**Fix in `app.py` line 771:**
+```python
+# before
+is_wheel_candidate = bool(csp_opps) and confidence >= 50
+# after
+is_wheel_candidate = bool(csp_opps) and (
+    confidence >= 50
+    or (top_csp.get("score", 0) >= 8 and above_200)
+)
+```
+`above_200` is already computed from the snapshot at line 754. `top_csp` is a dict so `.get()` is used. **76/76 tests passing.**
+
+---
+
+### 4. HOOD Not a Wheel Candidate — Explained (no code change)
+
+HOOD ($99.37): above 200 DMA, above 50 DMA, RSI 57 Neutral, confidence 50% — looks like a strong candidate. But Options card shows "No option expirations found within the scan window (up to 45 days)."
+
+`bool(csp_opps)` is `False` because yfinance options data is blocked on Render's IP. No CSP opps → Not a Wheel Candidate regardless of signals. The verdict is correct given what the app can see. This is the known yfinance IP-blocking issue — fixed by Massive API integration (Priority 2).
+
+---
+
+## Current State (end of 2026-08-13)
+
+- **App:** Live ✓ · latest commits `2149f24`, `94517fa`
+- **PostgreSQL:** Freshly provisioned on Render ✓ · schema auto-created
+- **Watchlist / digest users:** Need to be re-added (fresh DB)
+- **Wheel Candidate verdict:** Fixed — STRONG CSP + above 200 DMA now qualifies ✓
+- **Options data:** Still yfinance on Render — blocked for most tickers (HOOD, etc.)
+- **IV readings:** Zero — need to re-accumulate from scratch on new DB
+
+---
+
+## Pending for Next Session (2026-08-14)
+
+### 1. Restore watchlist and digest users
+- Add watchlist symbols: AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA
+- Register digest users via Admin → Add Subscriber or by signing in with each address
+
+### 2. Sign up for Massive Options Starter ($29/mo) — unblocks options on Render
+Email-only signup at massive.com. Grab API key. Run `polygon_poc/` locally to confirm greeks populate. Then integrate `MassiveOptionsProvider` into `options_engine.py` using the same 2-method interface (`get_expirations`, `get_chain`). This is the fix for HOOD and all other tickers showing "No option expirations found" on Render.
+
+### 3. Verify `/report/CSCO` all four cards render correctly
+Confirm EPS fields show once yfinance rate-limit clears, all four cards load.
+
+---
+
+## Commits This Session (2026-08-13)
+- `2149f24` — Fix /report 500 when fundamentals fetch fails — return null-schema dict instead of {}
+- `94517fa` — Fix Wheel Candidate verdict — qualify on STRONG CSP + above 200 DMA, not just confidence
+
+---
+
+## Session: 2026-08-11
+
+### 1. Login Crash on Render — Render PostgreSQL Database Expired
+
+**Symptom:** Logging in at `https://tradeadvisor-hpfq.onrender.com/login` returns HTTP 500 "Internal Server Error."
+
+**Error from logs:**
+```
+psycopg2.OperationalError: could not translate host name "dpg-d9641m8k1i2s73eqfe8g-a" to address: Name or service not known
+```
+
+**Root cause:** Render free-tier PostgreSQL databases are automatically deleted 90 days after creation. The internal hostname `dpg-d9641m8k1i2s73eqfe8g-a` no longer resolves because the database instance is gone. The `DATABASE_URL` env var on the web service still points to the deleted DB's internal hostname, so every request that touches the DB (including login) 500s immediately.
+
+**Fix — create a new Render PostgreSQL and update the env var:**
+1. Go to Render dashboard → Create new PostgreSQL service (free tier)
+2. Copy the **Internal Database URL** from the new service
+3. On the **tradeadvisor** web service → Environment → update `DATABASE_URL` to the new internal URL
+4. Redeploy the web service
+5. The schema will be recreated automatically on first request (app calls `init_db()` at startup)
+6. Re-add watchlist symbols and re-register digest users manually after the schema is fresh
+
+**Note:** Internal hostname (e.g. `dpg-xxx-a`) only resolves within Render's private network. If the web service and DB are in different Render regions, use the **External Database URL** instead (slower, has bandwidth limits). Keep them in the same region.
+
+---
+
+## Current State (end of 2026-08-11)
+
+- **App:** Broken — login 500s due to expired Render PostgreSQL
+- **Fix:** Pending — need to create new Render DB and update `DATABASE_URL` env var
+
+---
+
+## Pending for Next Session (2026-08-12)
+
+### 1. Create new Render PostgreSQL and reconnect
+- Create new free-tier PostgreSQL on Render dashboard
+- Update `DATABASE_URL` on the tradeadvisor web service to the new Internal Database URL
+- Redeploy → verify login works
+- Re-add watchlist symbols (AAPL, MSFT, NVDA, SPY, GOOGL, AMZN, META, TSLA)
+- Re-register digest users (sign in with sramaswami2021@gmail.com, sramaswami2025@gmail.com, tradeadvisor2025@gmail.com)
+
+---
+
+## Commits This Session (2026-08-11)
+- None — diagnosis only
+
+---
+
 ## Session: 2026-07-20
 
 ### 1. yfinance IP Blocking — Hosting Change Not Worth It
