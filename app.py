@@ -771,6 +771,7 @@ def report(symbol):
     is_wheel_candidate = bool(csp_opps) and (
         confidence >= 50
         or (top_csp.get("score", 0) >= 8 and above_200)
+        or (above_200 and not above_50 and rsi_label == "Neutral")
     )
     wheel_label = "Good Wheel Candidate" if is_wheel_candidate else "Not a Wheel Candidate"
 
